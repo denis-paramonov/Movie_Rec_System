@@ -1,0 +1,13 @@
+docker exec -it movie_rec-db-1 psql -U app_user -d app_db
+
+docker-compose logs db
+
+docker-compose logs backend 
+
+docker-compose logs recommender
+
+docker-compose logs frontend
+
+UPDATE users 
+SET username = 'user1' 
+WHERE username = 'testuser';
