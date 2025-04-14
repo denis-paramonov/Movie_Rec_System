@@ -138,10 +138,9 @@ def get_history():
         staff_df = pd.read_csv('/app/data/staff.csv')
         
         user_logs = logs[logs['user_id'] == user_id][['movie_id']].drop_duplicates()
-
-        logger.info({len(user_logs)})
+        
         if user_logs.empty:
-            logger.info(f'No history for user {user_id}')
+            logger.info(f"No history found for user {user_id}")
             return jsonify([]), 200
         
         history = user_logs.merge(
@@ -151,23 +150,38 @@ def get_history():
             how='inner'
         )
         
-        history['genres'] = history['genres'].apply(lambda x: eval(x) if isinstance(x, str) else x)
-        history['countries'] = history['countries'].apply(lambda x: eval(x) if isinstance(x, str) else x)
-        history['staff'] = history['staff'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+        # Защита от пропусков и некорректных данных
+        history['id'] = history['id'].fillna(-1).astype(int)
+        history['name'] = history['name'].fillna('Unknown')
+        history['description'] = history['description'].fillna('')
+        history['link'] = history['link'].fillna('https://via.placeholder.com/150')
+        
+        def safe_eval(x):
+            try:
+                return eval(x) if isinstance(x, str) and x.strip() else []
+            except:
+                logger.warning(f"Failed to eval: {x}")
+                return []
+        
+        history['genres'] = history['genres'].apply(safe_eval)
+        history['countries'] = history['countries'].apply(safe_eval)
+        history['staff'] = history['staff'].apply(safe_eval)
         
         genres_map = dict(zip(genres_df['id'], genres_df['name']))
         countries_map = dict(zip(countries_df['id'], countries_df['name']))
         staff_map = dict(zip(staff_df['id'], staff_df['name']))
         
-        history['genres'] = history['genres'].apply(lambda x: [genres_map.get(id, str(id)) for id in x])
-        history['country'] = history['countries'].apply(lambda x: [countries_map.get(id, str(id)) for id in x])
-        history['actors'] = history['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x])
+        history['genres'] = history['genres'].apply(lambda x: [genres_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
+        history['country'] = history['countries'].apply(lambda x: [countries_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
+        history['actors'] = history['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
         
         result = history[['id', 'name', 'description', 'genres', 'country', 'actors', 'link']].to_dict('records')
+        logger.info(f"History length: {len(result)}")
         return jsonify(result), 200
     except Exception as e:
         logger.error(f"Failed to get history: {str(e)}")
         return jsonify({"error": "Failed to get history"}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)
