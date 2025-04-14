@@ -4,7 +4,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 function Login() {
-  const [mode, setMode] = useState('login'); // login или register
+  const [mode, setMode] = useState('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -19,11 +19,13 @@ function Login() {
     try {
       if (mode === 'login') {
         const response = await axios.post('http://localhost:5001/login', { username, password });
-        const { user_id } = response.data;
+        const { user_id, token } = response.data;
+        localStorage.setItem('token', token);
+        localStorage.setItem('user_id', user_id);
         navigate(`/recommend?user_id=${user_id}`);
       } else {
         const response = await axios.post('http://localhost:5001/register', { username, password });
-        setSuccess('Регистрация успешна!.');
+        setSuccess('Регистрация успешна!');
         setMode('login');
         setUsername('');
         setPassword('');
@@ -50,8 +52,21 @@ function Login() {
   };
 
   return (
-    <Container maxWidth="sm" sx={{ mt: 8, p: 4, bgcolor: 'background.paper', boxShadow: 3, borderRadius: 2 }}>
-      <Typography variant="h4" gutterBottom>
+    <Container
+      maxWidth="sm"
+      sx={{
+        mt: 8,
+        p: 4,
+        bgcolor: 'background.paper',
+        boxShadow: 3,
+        borderRadius: 2,
+        background: (theme) =>
+          theme.palette.mode === 'light'
+            ? 'linear-gradient(to bottom, #e8f0fe, #d0e7ff)'
+            : 'linear-gradient(to bottom, #1a1a1a, #2c2c2c)',
+      }}
+    >
+      <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
         {mode === 'login' ? 'Вход' : 'Регистрация'}
       </Typography>
       <Tabs value={mode} onChange={handleTabChange} sx={{ mb: 4 }}>
@@ -64,7 +79,7 @@ function Login() {
         </Typography>
       )}
       {success && (
-        <Typography color="success.main" sx={{ mb: 2 }}>
+        <Typography color="green" sx={{ mb: 2 }}>
           {success}
         </Typography>
       )}
@@ -86,7 +101,24 @@ function Login() {
           onChange={(e) => setPassword(e.target.value)}
           required
         />
-        <Button type="submit" variant="contained" sx={{ mt: 2 }}>
+        <Button
+          type="submit"
+          variant="contained"
+          sx={{
+            mt: 2,
+            py: 1.5,
+            px: 4,
+            borderRadius: 12,
+            '&:hover': {
+              animation: 'pulse 1s infinite',
+              '@keyframes pulse': {
+                '0%': { transform: 'scale(1)' },
+                '50%': { transform: 'scale(1.05)' },
+                '100%': { transform: 'scale(1)' },
+              },
+            },
+          }}
+        >
           {mode === 'login' ? 'Войти' : 'Зарегистрироваться'}
         </Button>
       </form>

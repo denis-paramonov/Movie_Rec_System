@@ -33,13 +33,13 @@ def recommend(user_id, n_items=20):
         # Выбираем топ-20 по сумме duration
         popularity = logs.groupby('movie_id')['duration'].sum().reset_index()
         popular_movies = popularity.merge(
-            movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']],
+            movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link', 'year']],
             left_on='movie_id',
             right_on='id',
             how='inner'
         )
         popular_movies = popular_movies.sort_values(by='duration', ascending=False).head(n_items)
-        popular_movies = popular_movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
+        popular_movies = popular_movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link', 'year']]
     else:
         user_idx = dataset.mapping()[0].get(user_id)
         if user_idx is None:
@@ -47,13 +47,13 @@ def recommend(user_id, n_items=20):
             # Возвращаем популярные фильмы как запасной вариант
             popularity = logs.groupby('movie_id')['duration'].sum().reset_index()
             popular_movies = popularity.merge(
-                movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']],
+                movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link', 'year']],
                 left_on='movie_id',
                 right_on='id',
                 how='inner'
             )
             popular_movies = popular_movies.sort_values(by='duration', ascending=False).head(n_items)
-            popular_movies = popular_movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
+            popular_movies = popular_movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link', 'year']]
         else:
             # Получаем просмотренные фильмы
             watched_movie_ids = logs[logs['user_id'] == user_id]['movie_id'].unique()
@@ -85,17 +85,35 @@ def recommend(user_id, n_items=20):
             top_indices = np.argsort(-valid_scores)[:min(n_items, len(valid_indices))]
             top_items = [valid_indices[i] for i in top_indices]
 
+
             # Преобразуем в movie_id
             reverse_item_mapping = {v: k for k, v in item_mapping.items()}
             recommended_movie_ids = [reverse_item_mapping[item_idx] for item_idx in top_items]
 
-
-            popular_movies = movies[movies['id'].isin(recommended_movie_ids)][['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
+            popular_movies = movies[movies['id'].isin(recommended_movie_ids)][['id', 'name', 'description', 'genres', 'countries', 'staff', 'link', 'year']]
 
     # Обработка genres, countries, staff
     popular_movies['genres'] = popular_movies['genres'].apply(lambda x: eval(x) if isinstance(x, str) else x)
     popular_movies['countries'] = popular_movies['countries'].apply(lambda x: eval(x) if isinstance(x, str) else x)
     popular_movies['staff'] = popular_movies['staff'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+    
+    # Обработка year
+    def clean_year(y):
+        if pd.isna(y):
+            return 0
+        if isinstance(y, str) and '-' in y:
+            try:
+                return int(y.split('-')[0])
+            except:
+                logger.warning(f"Invalid year format: {y}")
+                return 0
+        try:
+            return int(y)
+        except:
+            logger.warning(f"Invalid year value: {y}")
+            return 0
+    
+    popular_movies['year'] = popular_movies['year'].apply(clean_year)
 
     genres_map = dict(zip(genres_df['id'], genres_df['name']))
     countries_map = dict(zip(countries_df['id'], countries_df['name']))
@@ -105,7 +123,7 @@ def recommend(user_id, n_items=20):
     popular_movies['country'] = popular_movies['countries'].apply(lambda x: [countries_map.get(id, str(id)) for id in x])
     popular_movies['actors'] = popular_movies['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x])
 
-    return popular_movies[['id', 'name', 'description', 'genres', 'country', 'actors', 'link']]
+    return popular_movies[['id', 'name', 'description', 'genres', 'country', 'actors', 'link', 'year']]
 
 @app.route('/recommend', methods=['GET'])
 def get_recommendations():

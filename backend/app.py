@@ -144,17 +144,34 @@ def get_history():
             return jsonify([]), 200
         
         history = user_logs.merge(
-            movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']],
+            movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link', 'year']],
             left_on='movie_id',
             right_on='id',
             how='inner'
         )
         
-        # Защита от пропусков и некорректных данных
+        # Защита от пропусков
         history['id'] = history['id'].fillna(-1).astype(int)
         history['name'] = history['name'].fillna('Unknown')
         history['description'] = history['description'].fillna('')
         history['link'] = history['link'].fillna('https://via.placeholder.com/150')
+        
+        def clean_year(y):
+            if pd.isna(y):
+                return 0
+            if isinstance(y, str) and '-' in y:
+                try:
+                    return int(y.split('-')[0])
+                except:
+                    logger.warning(f"Invalid year format: {y}")
+                    return 0
+            try:
+                return int(y)
+            except:
+                logger.warning(f"Invalid year value: {y}")
+                return 0
+        
+        history['year'] = history['year'].apply(clean_year)
         
         def safe_eval(x):
             try:
@@ -175,12 +192,13 @@ def get_history():
         history['country'] = history['countries'].apply(lambda x: [countries_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
         history['actors'] = history['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
         
-        result = history[['id', 'name', 'description', 'genres', 'country', 'actors', 'link']].to_dict('records')
+        result = history[['id', 'name', 'description', 'genres', 'country', 'actors', 'link', 'year']].to_dict('records')
         logger.info(f"History length: {len(result)}")
         return jsonify(result), 200
     except Exception as e:
         logger.error(f"Failed to get history: {str(e)}")
         return jsonify({"error": "Failed to get history"}), 500
+
 
 
 if __name__ == '__main__':

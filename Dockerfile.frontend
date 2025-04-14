@@ -10,7 +10,7 @@ RUN npm install
 COPY frontend/ .
 
 # Собираем приложение
-RUN npm run build
+RUN npm run build || (echo "Build failed, printing errors:" && cat /app/build-error.log && exit 1)
 
 EXPOSE 3000
 
