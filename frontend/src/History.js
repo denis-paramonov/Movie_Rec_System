@@ -1,10 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { Container, Typography, List, ListItem, ListItemText, Button } from '@mui/material';
+import {
+  Container,
+  Typography,
+  Grid,
+  Card,
+  CardMedia,
+  CardContent,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions
+} from '@mui/material';
 import axios from 'axios';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 
 function History() {
   const [history, setHistory] = useState([]);
+  const [selectedMovie, setSelectedMovie] = useState(null);
   const [searchParams] = useSearchParams();
   const userId = searchParams.get('user_id');
   const navigate = useNavigate();
@@ -21,8 +34,16 @@ function History() {
     if (userId) fetchHistory();
   }, [userId]);
 
+  const handleCardClick = (movie) => {
+    setSelectedMovie(movie);
+  };
+
+  const handleCloseDialog = () => {
+    setSelectedMovie(null);
+  };
+
   return (
-    <Container maxWidth="md" sx={{ mt: 8, p: 4, bgcolor: 'background.paper', boxShadow: 3, borderRadius: 2 }}>
+    <Container maxWidth="lg" sx={{ mt: 8, p: 4, bgcolor: 'background.paper', boxShadow: 3, borderRadius: 2 }}>
       <Typography variant="h4" gutterBottom>
         Watch History for User {userId}
       </Typography>
@@ -30,31 +51,57 @@ function History() {
         variant="contained"
         color="secondary"
         onClick={() => navigate(`/recommend?user_id=${userId}`)}
-        sx={{ mb: 2 }}
+        sx={{ mb: 4 }}
       >
         Back to Recommendations
       </Button>
-      <List>
+      <Grid container spacing={3}>
         {history.map((movie) => (
-          <ListItem
-            key={movie.id}
-            sx={{ bgcolor: 'grey.100', mb: 1, borderRadius: 1 }}
-          >
-            <ListItemText
-              primary={movie.name}
-              secondary={
-                <>
-                  <Typography component="span" variant="body2">
-                    Genres: {movie.genres?.join(', ') || 'N/A'}<br />
-                    Country: {movie.country || 'N/A'}<br />
-                    Actors: {movie.actors?.join(', ') || 'N/A'}
-                  </Typography>
-                </>
-              }
-            />
-          </ListItem>
+          <Grid item xs={12} sm={6} md={3} key={movie.id}>
+            <Card
+              sx={{ cursor: 'pointer', height: '100%' }}
+              onClick={() => handleCardClick(movie)}
+            >
+              <CardMedia
+                component="img"
+                height="200"
+                image={movie.link || 'https://via.placeholder.com/150'}
+                alt={movie.name}
+              />
+              <CardContent>
+                <Typography variant="h6" align="center">
+                  {movie.name}
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
         ))}
-      </List>
+      </Grid>
+
+      {selectedMovie && (
+        <Dialog open={!!selectedMovie} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+          <DialogTitle>{selectedMovie.name}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body1" paragraph>
+              <strong>Description:</strong> {selectedMovie.description || 'N/A'}
+            </Typography>
+            <Typography variant="body1" paragraph>
+              <strong>Genres:</strong> {selectedMovie.genres?.join(', ') || 'N/A'}
+            </Typography>
+            <Typography variant="body1" paragraph>
+              <strong>Country:</strong> {selectedMovie.country?.join(', ') || 'N/A'}
+            </Typography>
+            <Typography variant="body1" paragraph>
+              <strong>Actors:</strong> {selectedMovie.actors?.join(', ') || 'N/A'}
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseDialog} color="primary">
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Container>
   );
 }

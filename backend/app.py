@@ -76,45 +76,39 @@ def get_history():
     logger.info(f"Requesting watch history for user {user_id}")
     
     try:
-        # Чтение данных
         logs = pd.read_csv('/app/data/logs.csv')
         movies = pd.read_csv('/app/data/movies.csv')
         genres_df = pd.read_csv('/app/data/genres.csv')
         countries_df = pd.read_csv('/app/data/countries.csv')
         staff_df = pd.read_csv('/app/data/staff.csv')
         
-        # Фильтрация логов по user_id
         user_logs = logs[logs['user_id'] == user_id][['movie_id']].drop_duplicates()
         
-        # Объединение с movies для получения деталей
         history = user_logs.merge(
-            movies[['id', 'name', 'genres', 'countries', 'staff']],
+            movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']],
             left_on='movie_id',
             right_on='id',
             how='inner'
         )
         
-        # Преобразование строковых списков
         history['genres'] = history['genres'].apply(lambda x: eval(x) if isinstance(x, str) else x)
         history['countries'] = history['countries'].apply(lambda x: eval(x) if isinstance(x, str) else x)
         history['staff'] = history['staff'].apply(lambda x: eval(x) if isinstance(x, str) else x)
         
-        # Создание словарей для маппинга ID на названия
         genres_map = dict(zip(genres_df['id'], genres_df['name']))
         countries_map = dict(zip(countries_df['id'], countries_df['name']))
         staff_map = dict(zip(staff_df['id'], staff_df['name']))
         
-        # Преобразование ID в названия
         history['genres'] = history['genres'].apply(lambda x: [genres_map.get(id, str(id)) for id in x])
         history['country'] = history['countries'].apply(lambda x: [countries_map.get(id, str(id)) for id in x])
         history['actors'] = history['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x])
         
-        # Формирование ответа
-        result = history[['id', 'name', 'genres', 'country', 'actors']].to_dict('records')
+        result = history[['id', 'name', 'description', 'genres', 'country', 'actors', 'link']].to_dict('records')
         return jsonify(result), 200
     except Exception as e:
         logger.error(f"Failed to get history: {str(e)}")
         return jsonify({"error": "Failed to get history"}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)
