@@ -20,29 +20,55 @@ movies = pd.read_csv('models/movies.csv')
 genres_df = pd.read_csv('data/genres.csv')
 countries_df = pd.read_csv('data/countries.csv')
 staff_df = pd.read_csv('data/staff.csv')
+logs = pd.read_csv('data/logs.csv')  # Для проверки истории
 logger.info("Модель и данные успешно загружены")
 
 def recommend(user_id, n_items=20):
-    user_idx = dataset.mapping()[0].get(user_id)
-    if user_idx is None:
-        logger.warning(f"User {user_id} not found, returning popular movies.")
-        popular_movies = movies.sort_values(by='id').head(n_items)[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
-        popular_movies['genres'] = popular_movies['genres'].apply(lambda x: eval(x) if isinstance(x, str) else x)
-        popular_movies['countries'] = popular_movies['countries'].apply(lambda x: eval(x) if isinstance(x, str) else x)
-        popular_movies['staff'] = popular_movies['staff'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+    # Проверяем, есть ли пользователь в logs.csv
+    user_has_history = user_id in logs['user_id'].values
+    logger.info(f"User {user_id}, has_history: {user_has_history}")
+
+    if not user_has_history:
+        logger.warning(f"User {user_id} has no watch history, returning popular movies.")
+        # Выбираем топ-20 по сумме duration
+        popularity = logs.groupby('movie_id')['duration'].sum().reset_index()
+        popular_movies = popularity.merge(
+            movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']],
+            left_on='movie_id',
+            right_on='id',
+            how='inner'
+        )
+        popular_movies = popular_movies.sort_values(by='duration', ascending=False).head(n_items)
+        popular_movies = popular_movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
     else:
-        n_items_total = len(dataset.mapping()[2])
-        scores = model.predict(user_idx, np.arange(n_items_total), item_features=item_features)
-        top_items = np.argsort(-scores)[:n_items]
+        user_idx = dataset.mapping()[0].get(user_id)
+        if user_idx is None:
+            logger.error(f"User {user_id} found in logs but not in dataset, this should not happen!")
+            # Возвращаем популярные фильмы как запасной вариант
+            popularity = logs.groupby('movie_id')['duration'].sum().reset_index()
+            popular_movies = popularity.merge(
+                movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']],
+                left_on='movie_id',
+                right_on='id',
+                how='inner'
+            )
+            popular_movies = popular_movies.sort_values(by='duration', ascending=False).head(n_items)
+            popular_movies = popular_movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
+        else:
+            n_items_total = len(dataset.mapping()[2])
+            scores = model.predict(user_idx, np.arange(n_items_total), item_features=item_features)
+            top_items = np.argsort(-scores)[:n_items]
 
-        item_mapping = dataset.mapping()[2]
-        reverse_item_mapping = {v: k for k, v in item_mapping.items()}
-        recommended_movie_ids = [reverse_item_mapping[item_idx] for item_idx in top_items]
+            item_mapping = dataset.mapping()[2]
+            reverse_item_mapping = {v: k for k, v in item_mapping.items()}
+            recommended_movie_ids = [reverse_item_mapping[item_idx] for item_idx in top_items]
 
-        popular_movies = movies[movies['id'].isin(recommended_movie_ids)][['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
-        popular_movies['genres'] = popular_movies['genres'].apply(lambda x: eval(x) if isinstance(x, str) else x)
-        popular_movies['countries'] = popular_movies['countries'].apply(lambda x: eval(x) if isinstance(x, str) else x)
-        popular_movies['staff'] = popular_movies['staff'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+            popular_movies = movies[movies['id'].isin(recommended_movie_ids)][['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
+
+    # Обработка genres, countries, staff
+    popular_movies['genres'] = popular_movies['genres'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+    popular_movies['countries'] = popular_movies['countries'].apply(lambda x: eval(x) if isinstance(x, str) else x)
+    popular_movies['staff'] = popular_movies['staff'].apply(lambda x: eval(x) if isinstance(x, str) else x)
 
     genres_map = dict(zip(genres_df['id'], genres_df['name']))
     countries_map = dict(zip(countries_df['id'], countries_df['name']))

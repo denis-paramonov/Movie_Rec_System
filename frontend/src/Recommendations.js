@@ -49,7 +49,7 @@ function Recommendations() {
   return (
     <Container maxWidth="lg" sx={{ mt: 8, p: 4, bgcolor: 'background.paper', boxShadow: 3, borderRadius: 2 }}>
       <Typography variant="h4" gutterBottom>
-        Recommendations for User {userId}
+        Рекомендуем посмотреть:
       </Typography>
       <Button
         variant="contained"
@@ -57,14 +57,14 @@ function Recommendations() {
         onClick={handleLogout}
         sx={{ mr: 2, mb: 4 }}
       >
-        Logout
+        Выйти
       </Button>
       <Button
         variant="outlined"
         onClick={() => navigate(`/history?user_id=${userId}`)}
         sx={{ mb: 4 }}
       >
-        View Watch History
+         История просмотров
       </Button>
       <Grid container spacing={3}>
         {recommendations.map((movie) => (

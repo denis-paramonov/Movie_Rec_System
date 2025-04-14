@@ -40,6 +40,61 @@ def get_user_id(username):
     conn.close()
     return result[0] if result else None
 
+def username_exists(username):
+    conn = psycopg2.connect(**DB_CONFIG)
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM users WHERE username = %s", (username,))
+    exists = cursor.fetchone() is not None
+    conn.close()
+    return exists
+
+def get_next_user_id():
+    conn = psycopg2.connect(**DB_CONFIG)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COALESCE(MAX(user_id), 0) + 1 FROM users")
+    next_id = cursor.fetchone()[0]
+    conn.close()
+    return next_id
+
+@app.route('/register', methods=['POST'])
+def register():
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+    
+    logger.info(f"Попытка регистрации для {username}")
+    
+    if username_exists(username):
+        logger.warning(f"Пользователь {username} уже существует")
+        return jsonify({"error": "Username already exists"}), 409
+    
+    try:
+        # Хешируем пароль
+        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        
+        # Получаем следующий user_id
+        user_id = get_next_user_id()
+        
+        # Сохраняем в БД
+        conn = psycopg2.connect(**DB_CONFIG)
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO users (user_id, username, password_hash, plain_password) VALUES (%s, %s, %s, %s)",
+            (user_id, username, hashed_password, password)
+        )
+        conn.commit()
+        conn.close()
+        
+        logger.info(f"Регистрация успешна для {username}, user_id: {user_id}")
+        return jsonify({"user_id": user_id, "message": "Registration successful"}), 201
+    except Exception as e:
+        logger.error(f"Ошибка при регистрации: {str(e)}")
+        return jsonify({"error": "Failed to register"}), 500
+
+
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
@@ -83,6 +138,11 @@ def get_history():
         staff_df = pd.read_csv('/app/data/staff.csv')
         
         user_logs = logs[logs['user_id'] == user_id][['movie_id']].drop_duplicates()
+
+        logger.info({len(user_logs)})
+        if user_logs.empty:
+            logger.info(f'No history for user {user_id}')
+            return jsonify([]), 200
         
         history = user_logs.merge(
             movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']],
@@ -108,7 +168,6 @@ def get_history():
     except Exception as e:
         logger.error(f"Failed to get history: {str(e)}")
         return jsonify({"error": "Failed to get history"}), 500
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)

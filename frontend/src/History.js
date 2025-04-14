@@ -10,7 +10,8 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions
+  DialogActions,
+  Pagination
 } from '@mui/material';
 import axios from 'axios';
 import { useSearchParams, useNavigate } from 'react-router-dom';
@@ -18,6 +19,8 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 function History() {
   const [history, setHistory] = useState([]);
   const [selectedMovie, setSelectedMovie] = useState(null);
+  const [page, setPage] = useState(1);
+  const itemsPerPage = 20;
   const [searchParams] = useSearchParams();
   const userId = searchParams.get('user_id');
   const navigate = useNavigate();
@@ -26,9 +29,11 @@ function History() {
     const fetchHistory = async () => {
       try {
         const response = await axios.get(`http://localhost:5001/history?user_id=${userId}`);
-        setHistory(response.data);
+        console.log('History response:', response.data);
+        setHistory(Array.isArray(response.data) ? response.data : []);
       } catch (error) {
         console.error('Failed to fetch history:', error);
+        setHistory([]);
       }
     };
     if (userId) fetchHistory();
@@ -41,6 +46,12 @@ function History() {
   const handleCloseDialog = () => {
     setSelectedMovie(null);
   };
+
+  const handlePageChange = (event, value) => {
+    setPage(value);
+  };
+
+  const paginatedHistory = history.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
   return (
     <Container maxWidth="lg" sx={{ mt: 8, p: 4, bgcolor: 'background.paper', boxShadow: 3, borderRadius: 2 }}>
@@ -55,32 +66,47 @@ function History() {
       >
         Back to Recommendations
       </Button>
-      <Grid container spacing={3}>
-        {history.map((movie) => (
-          <Grid item xs={12} sm={6} md={3} key={movie.id}>
-            <Card
-              sx={{ cursor: 'pointer', height: '100%' }}
-              onClick={() => handleCardClick(movie)}
-            >
-              <CardMedia
-                component="img"
-                height="200"
-                image={movie.link || 'https://via.placeholder.com/150'}
-                alt={movie.name}
-              />
-              <CardContent>
-                <Typography variant="h6" align="center">
-                  {movie.name}
-                </Typography>
-              </CardContent>
-            </Card>
+      {history.length === 0 ? (
+        <Typography variant="h6" color="text.secondary" align="center" sx={{ mt: 4 }}>
+          Your watch history is empty.
+        </Typography>
+      ) : (
+        <>
+          <Grid container spacing={3}>
+            {paginatedHistory.map((movie, index) => (
+              <Grid item xs={12} sm={6} md={3} key={movie.id || index}>
+                <Card
+                  sx={{ cursor: 'pointer', height: '100%' }}
+                  onClick={() => handleCardClick(movie)}
+                >
+                  <CardMedia
+                    component="img"
+                    height="200"
+                    image={movie.link || 'https://via.placeholder.com/150'}
+                    alt={movie.name || 'Unknown'}
+                  />
+                  <CardContent>
+                    <Typography variant="h6" align="center">
+                      {movie.name || 'Unknown'}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            ))}
           </Grid>
-        ))}
-      </Grid>
+          <Pagination
+            count={Math.ceil(history.length / itemsPerPage)}
+            page={page}
+            onChange={handlePageChange}
+            sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}
+          />
+        </>
+      )}
 
-      {selectedMovie && (
+
+{selectedMovie && (
         <Dialog open={!!selectedMovie} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-          <DialogTitle>{selectedMovie.name}</DialogTitle>
+          <DialogTitle>{selectedMovie.name || 'Unknown'}</DialogTitle>
           <DialogContent>
             <Typography variant="body1" paragraph>
               <strong>Description:</strong> {selectedMovie.description || 'N/A'}
