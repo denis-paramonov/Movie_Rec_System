@@ -55,13 +55,40 @@ def recommend(user_id, n_items=20):
             popular_movies = popular_movies.sort_values(by='duration', ascending=False).head(n_items)
             popular_movies = popular_movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
         else:
-            n_items_total = len(dataset.mapping()[2])
-            scores = model.predict(user_idx, np.arange(n_items_total), item_features=item_features)
-            top_items = np.argsort(-scores)[:n_items]
+            # Получаем просмотренные фильмы
+            watched_movie_ids = logs[logs['user_id'] == user_id]['movie_id'].unique()
+            logger.info(f"User {user_id} watched {len(watched_movie_ids)} movies")
 
+            # Получаем внутренние индексы фильмов
             item_mapping = dataset.mapping()[2]
+            watched_item_indices = [
+                item_mapping.get(movie_id)
+                for movie_id in watched_movie_ids
+                if movie_id in item_mapping
+            ]
+            watched_item_indices = set(idx for idx in watched_item_indices if idx is not None)
+
+            # Предсказываем для всех фильмов
+            n_items_total = len(item_mapping)
+            scores = model.predict(user_idx, np.arange(n_items_total), item_features=item_features)
+
+            # Исключаем просмотренные фильмы
+            valid_indices = [
+                i for i in range(n_items_total)
+                if i not in watched_item_indices
+            ]
+            if len(valid_indices) < n_items:
+                logger.warning(f"Only {len(valid_indices)} unseen movies available for user {user_id}")
+            
+            # Сортируем по скорам только непросмотренные фильмы
+            valid_scores = scores[valid_indices]
+            top_indices = np.argsort(-valid_scores)[:min(n_items, len(valid_indices))]
+            top_items = [valid_indices[i] for i in top_indices]
+
+            # Преобразуем в movie_id
             reverse_item_mapping = {v: k for k, v in item_mapping.items()}
             recommended_movie_ids = [reverse_item_mapping[item_idx] for item_idx in top_items]
+
 
             popular_movies = movies[movies['id'].isin(recommended_movie_ids)][['id', 'name', 'description', 'genres', 'countries', 'staff', 'link']]
 
@@ -79,7 +106,6 @@ def recommend(user_id, n_items=20):
     popular_movies['actors'] = popular_movies['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x])
 
     return popular_movies[['id', 'name', 'description', 'genres', 'country', 'actors', 'link']]
-
 
 @app.route('/recommend', methods=['GET'])
 def get_recommendations():
