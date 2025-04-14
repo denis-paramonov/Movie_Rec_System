@@ -3,13 +3,18 @@
 
 2. Текущий функционал
    
-   2.1 Система авторизации
-   ![image](https://github.com/user-attachments/assets/e67e8039-3da6-44d1-9d82-9725e5880ed4)
+   2.1 Система авторизации/регистрации
+   ![image](https://github.com/user-attachments/assets/0790451e-a7f7-49c4-96f5-84d1c7282e87)
 
 
    2.2 Рекомендации
-   ![image](https://github.com/user-attachments/assets/d9a163d5-0dc0-4638-8bb0-44ebae02fc2b)
+   ![image](https://github.com/user-attachments/assets/63ec9361-3397-426d-bf97-ceea5659bbf8)
 
 
-   2.3 История просмотров
-   ![image](https://github.com/user-attachments/assets/7d8a83db-672e-47fd-98f4-4e0be292eb10)
+   2.3 Карточка фильма
+   ![image](https://github.com/user-attachments/assets/4a4d88d8-8675-4e17-b5ff-83ae12d46cbf)
+
+
+   2.4 История просмотров
+   ![image](https://github.com/user-attachments/assets/98f22d32-48f7-4a76-9da5-d2214bcde5fd)
+
