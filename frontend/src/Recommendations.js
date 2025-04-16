@@ -23,7 +23,7 @@ import {
   Collapse,
   IconButton,
 } from '@mui/material';
-import { ArrowBack, Star, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { ArrowBack, ExpandMore, ExpandLess } from '@mui/icons-material';
 import axios from 'axios';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
@@ -64,6 +64,7 @@ function Recommendations() {
   }, [fetchRecommendations]);
 
   const handleCardClick = (movie) => {
+    console.log('Selected movie:', movie);
     setSelectedMovie(movie);
     setTabValue('details');
     setExpandedReviews({});
@@ -91,10 +92,17 @@ function Recommendations() {
   };
 
   const parseReviews = (reviewsStr) => {
+    console.log('Parsing reviews:', reviewsStr, typeof reviewsStr);
+    if (!reviewsStr || typeof reviewsStr !== 'string') {
+      console.warn('Reviews is empty or not a string:', reviewsStr);
+      return [];
+    }
     try {
-      return JSON.parse(reviewsStr || '[]');
+      const parsed = JSON.parse(reviewsStr);
+      console.log('Parsed reviews:', parsed);
+      return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
-      console.error('Ошибка парсинга отзывов:', e);
+      console.error('Ошибка парсинга отзывов:', e, 'Input:', reviewsStr);
       return [];
     }
   };

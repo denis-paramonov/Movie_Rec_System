@@ -5,6 +5,7 @@ import bcrypt
 import logging
 from flask_cors import CORS
 import pandas as pd
+import json
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:3000"])
@@ -72,13 +73,8 @@ def register():
         return jsonify({"error": "Username already exists"}), 409
     
     try:
-        # Хешируем пароль
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        
-        # Получаем следующий user_id
         user_id = get_next_user_id()
-        
-        # Сохраняем в БД
         conn = psycopg2.connect(**DB_CONFIG)
         cursor = conn.cursor()
         cursor.execute(
@@ -87,13 +83,11 @@ def register():
         )
         conn.commit()
         conn.close()
-        
         logger.info(f"Регистрация успешна для {username}, user_id: {user_id}")
         return jsonify({"user_id": user_id, "message": "Registration successful"}), 201
     except Exception as e:
         logger.error(f"Ошибка при регистрации: {str(e)}")
         return jsonify({"error": "Failed to register"}), 500
-
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -122,7 +116,6 @@ def get_recommendations():
         return jsonify(response.json()), 200
     return jsonify({"error": "Failed to get recommendations"}), 500
 
-
 @app.route('/history', methods=['GET'])
 def get_history():
     user_id = request.args.get('user_id', type=int)
@@ -144,17 +137,30 @@ def get_history():
             return jsonify([]), 200
         
         history = user_logs.merge(
-            movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link', 'year']],
+            movies[['id', 'name', 'description', 'genres', 'countries', 'staff', 'link', 'year', 'reviews']],
             left_on='movie_id',
             right_on='id',
             how='inner'
         )
         
-        # Защита от пропусков
         history['id'] = history['id'].fillna(-1).astype(int)
         history['name'] = history['name'].fillna('Unknown')
         history['description'] = history['description'].fillna('')
         history['link'] = history['link'].fillna('https://via.placeholder.com/150')
+        history['reviews'] = history['reviews'].fillna('[]')
+        
+        # Преобразуем reviews в валидный JSON
+        def fix_reviews(reviews_str):
+            try:
+                # Парсим строку как Python-объект
+                reviews_list = eval(reviews_str) if isinstance(reviews_str, str) and reviews_str.strip() else []
+                # Сериализуем в JSON с двойными кавычками
+                return json.dumps(reviews_list, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"Failed to parse reviews: {reviews_str}, error: {str(e)}")
+                return '[]'
+        
+        history['reviews'] = history['reviews'].apply(fix_reviews)
         
         def clean_year(y):
             if pd.isna(y):
@@ -192,14 +198,12 @@ def get_history():
         history['country'] = history['countries'].apply(lambda x: [countries_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
         history['actors'] = history['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
         
-        result = history[['id', 'name', 'description', 'genres', 'country', 'actors', 'link', 'year']].to_dict('records')
+        result = history[['id', 'name', 'description', 'genres', 'country', 'actors', 'link', 'year', 'reviews']].to_dict('records')
         logger.info(f"History length: {len(result)}")
         return jsonify(result), 200
     except Exception as e:
         logger.error(f"Failed to get history: {str(e)}")
         return jsonify({"error": "Failed to get history"}), 500
-
-
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)
