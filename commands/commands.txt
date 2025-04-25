@@ -1,4 +1,5 @@
 docker exec -it movie_rec-db-1 psql -U app_user -d app_db
+XNr9qmct1Jpa
 
 docker-compose logs db
 

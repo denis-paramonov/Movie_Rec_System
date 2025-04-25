@@ -1,84 +1,44 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import React, { createContext, useState, useMemo } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import Recommendations from './Recommendations';
+import { motion } from 'framer-motion';
+import Login from './Login';
 import History from './History';
-import Login from './Login'; // Предполагаемый компонент логина
-import ThemeToggle from './ThemeToggle';
+import Recommendations from './Recommendations';
+import Profile from './Profile';
+import { QueryClient, QueryClientProvider } from 'react-query';
+import theme from './theme';
 
-export const ThemeContext = React.createContext();
+export const ThemeContext = createContext();
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 function App() {
-  const [mode, setMode] = useState(() => localStorage.getItem('theme') || 'light');
+  const [mode, setMode] = useState('light');
 
-  const theme = useMemo(
+  const muiTheme = useMemo(
     () =>
       createTheme({
+        ...theme,
         palette: {
+          ...theme.palette,
           mode,
-          ...(mode === 'light'
-            ? {
-                background: {
-                  default: '#f5f5f5',
-                  paper: '#ffffff',
-                },
-                text: {
-                  primary: '#333333',
-                  secondary: '#666666',
-                },
-                primary: {
-                  main: '#1976d2', // Синий акцент
-                },
-                secondary: {
-                  main: '#ff9800', // Оранжевый для кнопок
-                },
-                cardBorder: '#e0e0e0', // Рамка для светлой темы
-              }
-            : {
-                background: {
-                  default: '#121212',
-                  paper: '#1e1e1e',
-                },
-                text: {
-                  primary: '#e0e0e0',
-                  secondary: '#b0b0b0',
-                },
-                primary: {
-                  main: '#90caf9', // Светло-синий для тёмной
-                },
-                secondary: {
-                  main: '#ffb300', // Яркий оранжевый
-                },
-                cardBorder: '#424242', // Рамка для тёмной темы
-              }),
-        },
-        typography: {
-          fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
-          h4: {
-            fontWeight: 600,
+          background: {
+            default: mode === 'light' ? '#fff' : '#121212',
+            paper: mode === 'light' ? '#fff' : '#1e1e1e',
           },
-          h6: {
-            fontWeight: 500,
-          },
-        },
-        components: {
-          MuiCard: {
-            styleOverrides: {
-              root: {
-                borderRadius: 8,
-                transition: 'all 0.3s ease',
-              },
-            },
-          },
-          MuiButton: {
-            styleOverrides: {
-              root: {
-                borderRadius: 8,
-                textTransform: 'none',
-                padding: '8px 16px',
-              },
-            },
+          cardBorder: mode === 'light' ? '#e0e0e0' : '#424242',
+          text: {
+            primary: mode === 'light' ? '#333' : '#fff',
+            secondary: mode === 'light' ? '#666' : '#bbb',
           },
         },
       }),
@@ -86,27 +46,40 @@ function App() {
   );
 
   const toggleTheme = () => {
-    setMode((prev) => {
-      const newMode = prev === 'light' ? 'dark' : 'light';
-      localStorage.setItem('theme', newMode);
-      return newMode;
-    });
+    setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
+  };
+
+  const themeContextValue = { toggleTheme, mode };
+
+  const backgroundVariants = {
+    light: { backgroundColor: '#fff' },
+    dark: { backgroundColor: '#121212' },
   };
 
   return (
-    <ThemeContext.Provider value={{ mode, toggleTheme }}>
-      <ThemeProvider theme={theme}>
-        <CssBaseline />
-        <BrowserRouter>
-          <Routes>
-            <Route path="/recommend" element={<Recommendations />} />
-            <Route path="/history" element={<History />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<Recommendations />} />
-          </Routes>
-        </BrowserRouter>
-      </ThemeProvider>
-    </ThemeContext.Provider>
+    <QueryClientProvider client={queryClient}>
+      <ThemeContext.Provider value={themeContextValue}>
+        <ThemeProvider theme={muiTheme}>
+          <motion.div
+            animate={mode === 'light' ? 'light' : 'dark'}
+            variants={backgroundVariants}
+            transition={{ duration: 0.5, ease: 'easeInOut' }}
+            style={{ minHeight: '100vh' }}
+          >
+            <CssBaseline />
+            <Router>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route path="/history" element={<History />} />
+                <Route path="/recommend" element={<Recommendations />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="*" element={<Navigate to="/login" replace />} />
+              </Routes>
+            </Router>
+          </motion.div>
+        </ThemeProvider>
+      </ThemeContext.Provider>
+    </QueryClientProvider>
   );
 }
 

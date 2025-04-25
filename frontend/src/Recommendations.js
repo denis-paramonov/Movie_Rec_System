@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useContext } from 'react';
 import {
   Container,
   Typography,
@@ -6,7 +6,6 @@ import {
   Card,
   CardMedia,
   CardContent,
-  Button,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -22,11 +21,15 @@ import {
   ListItemText,
   Collapse,
   IconButton,
+  Tooltip,
+  Button,
 } from '@mui/material';
-import { ArrowBack, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { Movie, History, Person, Logout, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { motion } from 'framer-motion';
 import axios from 'axios';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
+import { ThemeContext } from './App';
 
 function Recommendations() {
   const [recommendations, setRecommendations] = useState([]);
@@ -38,6 +41,7 @@ function Recommendations() {
   const navigate = useNavigate();
   const [tabValue, setTabValue] = useState('details');
   const [expandedReviews, setExpandedReviews] = useState({});
+  const { mode } = useContext(ThemeContext);
 
   const fetchRecommendations = useCallback(async () => {
     if (!userId) {
@@ -111,50 +115,69 @@ function Recommendations() {
     <Box
       sx={{
         minHeight: '100vh',
-        bgcolor: (theme) =>
-          theme.palette.mode === 'light'
-            ? 'linear-gradient(to bottom, #e8f0fe, #d0e7ff)'
-            : 'linear-gradient(to bottom, #1a1a1a, #2c2c2c)',
+        bgcolor: mode === 'light'
+          ? 'linear-gradient(to bottom, #e8f0fe, #d0e7ff)'
+          : 'linear-gradient(to bottom, #1a202c, #2d3748)',
       }}
     >
       <AppBar position="sticky">
-        <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
-            Рекомендации фильмов
+        <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
+            Рекомендации
           </Typography>
-          <ThemeToggle />
-          <Button color="inherit" onClick={handleLogout}>
-            Выйти
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Рекомендации">
+              <IconButton
+                component={motion.button}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                color="inherit"
+                onClick={() => navigate(`/recommend?user_id=${userId}`)}
+              >
+                <Movie />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="История">
+              <IconButton
+                component={motion.button}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                color="inherit"
+                onClick={() => navigate(`/history?user_id=${userId}`)}
+              >
+                <History />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Профиль">
+              <IconButton
+                component={motion.button}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                color="inherit"
+                onClick={() => navigate(`/profile?user_id=${userId}`)}
+              >
+                <Person />
+              </IconButton>
+            </Tooltip>
+            <ThemeToggle />
+            <Tooltip title="Выйти">
+              <IconButton
+                component={motion.button}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                color="inherit"
+                onClick={handleLogout}
+              >
+                <Logout />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Toolbar>
       </AppBar>
       <Container maxWidth="lg" sx={{ mt: 4, p: 4, bgcolor: 'background.paper', borderRadius: 2, boxShadow: 3 }}>
         <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
           Рекомендации для пользователя {userId || 'Неизвестный'}
         </Typography>
-        <Button
-          variant="contained"
-          color="secondary"
-          startIcon={<ArrowBack />}
-          onClick={() => navigate(`/history?user_id=${userId}`)}
-          sx={{
-            mb: 4,
-            py: 1.5,
-            px: 4,
-            borderRadius: 12,
-            '&:hover': {
-              animation: 'pulse 1s infinite',
-              '@keyframes pulse': {
-                '0%': { transform: 'scale(1)' },
-                '50%': { transform: 'scale(1.05)' },
-                '100%': { transform: 'scale(1)' },
-              },
-            },
-          }}
-          disabled={!userId}
-        >
-          Посмотреть историю просмотров
-        </Button>
         {loading ? (
           <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />
         ) : error ? (
@@ -170,6 +193,9 @@ function Recommendations() {
             {recommendations.map((movie, index) => (
               <Grid item xs={12} sm={6} md={4} lg={4} key={movie.id || `movie-${index}`}>
                 <Card
+                  component={motion.div}
+                  whileHover={{ scale: 1.05, rotate: 1 }}
+                  whileTap={{ scale: 0.95 }}
                   sx={{
                     height: '100%',
                     display: 'flex',
@@ -177,7 +203,6 @@ function Recommendations() {
                     border: (theme) => `1px solid ${theme.palette.cardBorder}`,
                     transition: 'transform 0.3s ease, box-shadow 0.3s ease',
                     '&:hover': {
-                      transform: 'scale(1.05)',
                       boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
                     },
                     animation: 'fadeIn 0.5s ease-in-out',
@@ -331,7 +356,7 @@ function Recommendations() {
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={handleCloseDialog} color="primary" variant="contained" sx={{ borderRadius: 8 }}>
+              <Button onClick={handleCloseDialog} color="primary" variant="contained" sx={{ borderRadius: 8, backgroundColor: '#3b82f6', '&:hover': { backgroundColor: '#60a5fa' } }}>
                 Закрыть
               </Button>
             </DialogActions>

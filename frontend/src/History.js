@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useContext } from 'react';
 import {
   Container,
   Typography,
@@ -6,12 +6,11 @@ import {
   Card,
   CardMedia,
   CardContent,
-  Button,
+  Pagination,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  Pagination,
   CircularProgress,
   AppBar,
   Toolbar,
@@ -23,24 +22,29 @@ import {
   ListItemText,
   Collapse,
   IconButton,
+  Tooltip,
+  Button,
 } from '@mui/material';
-import { ArrowBack, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { Movie, History as HistoryIcon, Person, Logout, ExpandMore, ExpandLess } from '@mui/icons-material';
+import { motion } from 'framer-motion';
 import axios from 'axios';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
+import { ThemeContext } from './App';
 
 function History() {
   const [history, setHistory] = useState([]);
   const [selectedMovie, setSelectedMovie] = useState(null);
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const itemsPerPage = 21;
+  const [page, setPage] = useState(1);
   const [searchParams] = useSearchParams();
   const userId = searchParams.get('user_id');
   const navigate = useNavigate();
+  const itemsPerPage = 21;
   const [tabValue, setTabValue] = useState('details');
   const [expandedReviews, setExpandedReviews] = useState({});
+  const { mode } = useContext(ThemeContext);
 
   const fetchHistory = useCallback(async () => {
     if (!userId) {
@@ -51,7 +55,6 @@ function History() {
     setError(null);
     try {
       const response = await axios.get(`http://localhost:5001/history?user_id=${userId}`);
-      console.log('History response:', response.data);
       const validHistory = Array.isArray(response.data)
         ? response.data.filter((movie) => movie && typeof movie === 'object' && 'id' in movie)
         : [];
@@ -70,7 +73,6 @@ function History() {
   }, [fetchHistory]);
 
   const handleCardClick = (movie) => {
-    console.log('Selected movie:', movie);
     setSelectedMovie(movie);
     setTabValue('details');
     setExpandedReviews({});
@@ -102,71 +104,98 @@ function History() {
   };
 
   const parseReviews = (reviewsStr) => {
-    console.log('Parsing reviews:', reviewsStr, typeof reviewsStr);
-    if (!reviewsStr || typeof reviewsStr !== 'string') {
-      console.warn('Reviews is empty or not a string:', reviewsStr);
-      return [];
-    }
+    if (!reviewsStr || typeof reviewsStr !== 'string') return [];
     try {
       const parsed = JSON.parse(reviewsStr);
-      console.log('Parsed reviews:', parsed);
       return Array.isArray(parsed) ? parsed : [];
     } catch (e) {
-      console.error('Ошибка парсинга отзывов:', e, 'Input:', reviewsStr);
+      console.error('Ошибка парсинга отзывов:', e);
       return [];
     }
   };
 
   const paginatedHistory = history.slice((page - 1) * itemsPerPage, page * itemsPerPage);
 
+  const cardVariants = {
+    hidden: { opacity: 0, y: 20 },
+    visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } },
+  };
+
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        bgcolor: (theme) =>
-          theme.palette.mode === 'light'
-            ? 'linear-gradient(to bottom, #e8f0fe, #d0e7ff)'
-            : 'linear-gradient(to bottom, #1a1a1a, #2c2c2c)',
+        bgcolor: mode === 'light'
+          ? 'linear-gradient(to bottom, #e8f0fe, #d0e7ff)'
+          : 'linear-gradient(to bottom, #1a202c, #2d3748)',
       }}
     >
       <AppBar position="sticky">
-        <Toolbar>
-          <Typography variant="h6" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
+        <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
+          <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
             История просмотров
           </Typography>
-          <ThemeToggle />
-          <Button color="inherit" onClick={handleLogout}>
-            Выйти
-          </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Рекомендации">
+              <IconButton
+                component={motion.button}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                color="inherit"
+                onClick={() => navigate(`/recommend?user_id=${userId}`)}
+              >
+                <Movie />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="История">
+              <IconButton
+                component={motion.button}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                color="inherit"
+                onClick={() => navigate(`/history?user_id=${userId}`)}
+              >
+                <HistoryIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Профиль">
+              <IconButton
+                component={motion.button}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                color="inherit"
+                onClick={() => navigate(`/profile?user_id=${userId}`)}
+              >
+                <Person />
+              </IconButton>
+            </Tooltip>
+            <ThemeToggle />
+            <Tooltip title="Выйти">
+              <IconButton
+                component={motion.button}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                color="inherit"
+                onClick={handleLogout}
+              >
+                <Logout />
+              </IconButton>
+            </Tooltip>
+          </Box>
         </Toolbar>
       </AppBar>
       <Container maxWidth="lg" sx={{ mt: 4, p: 4, bgcolor: 'background.paper', borderRadius: 2, boxShadow: 3 }}>
-        <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
-          История просмотров для пользователя {userId || 'Неизвестный'}
-        </Typography>
-        <Button
-          variant="contained"
-          color="secondary"
-          startIcon={<ArrowBack />}
-          onClick={() => navigate(`/recommend?user_id=${userId}`)}
-          sx={{
-            mb: 4,
-            py: 1.5,
-            px: 4,
-            borderRadius: 12,
-            '&:hover': {
-              animation: 'pulse 1s infinite',
-              '@keyframes pulse': {
-                '0%': { transform: 'scale(1)' },
-                '50%': { transform: 'scale(1.05)' },
-                '100%': { transform: 'scale(1)' },
-              },
-            },
-          }}
-          disabled={!userId}
+        <Typography
+          variant="h4"
+          gutterBottom
+          sx={{ fontWeight: 'bold' }}
+          component={motion.div}
+          initial={{ opacity: 0, x: -20 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5 }}
         >
-          Вернуться к рекомендациям
-        </Button>
+          История просмотров пользователя {userId || 'Неизвестный'}
+        </Typography>
         {loading ? (
           <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />
         ) : error ? (
@@ -186,20 +215,20 @@ function History() {
               {paginatedHistory.map((movie, index) => (
                 <Grid item xs={12} sm={6} md={4} lg={4} key={movie.id || `movie-${index}`}>
                   <Card
+                    component={motion.div}
+                    variants={cardVariants}
+                    initial="hidden"
+                    animate="visible"
+                    whileHover={{ scale: 1.05, rotate: 1 }}
+                    whileTap={{ scale: 0.95 }}
                     sx={{
                       height: '100%',
                       display: 'flex',
                       flexDirection: 'column',
                       border: (theme) => `1px solid ${theme.palette.cardBorder}`,
-                      transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+                      transition: 'box-shadow 0.3s ease',
                       '&:hover': {
-                        transform: 'scale(1.05)',
                         boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
-                      },
-                      animation: 'fadeIn 0.5s ease-in-out',
-                      '@keyframes fadeIn': {
-                        '0%': { opacity: 0, transform: 'translateY(20px)' },
-                        '100%': { opacity: 1, transform: 'translateY(0)' },
                       },
                       maxWidth: { xs: 300, sm: '100%' },
                       mx: { xs: 'auto', sm: 0 },
@@ -247,14 +276,12 @@ function History() {
             onClose={handleCloseDialog}
             maxWidth="md"
             fullWidth
-            sx={{
-              '& .MuiDialog-paper': {
-                animation: 'dialogFadeIn 0.3s ease-in-out',
-                '@keyframes dialogFadeIn': {
-                  '0%': { opacity: 0, transform: 'scale(0.9)' },
-                  '100%': { opacity: 1, transform: 'scale(1)' },
-                },
-              },
+            TransitionComponent={motion.div}
+            TransitionProps={{
+              initial: { opacity: 0, scale: 0.9 },
+              animate: { opacity: 1, scale: 1 },
+              exit: { opacity: 0, scale: 0.9 },
+              transition: { duration: 0.3, ease: 'easeInOut' },
             }}
           >
             <DialogTitle>{selectedMovie.name || 'Неизвестный'}</DialogTitle>
@@ -354,7 +381,7 @@ function History() {
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={handleCloseDialog} color="primary" variant="contained" sx={{ borderRadius: 8 }}>
+              <Button onClick={handleCloseDialog} color="primary" variant="contained" sx={{ borderRadius: 8, backgroundColor: '#3b82f6', '&:hover': { backgroundColor: '#60a5fa' } }}>
                 Закрыть
               </Button>
             </DialogActions>
