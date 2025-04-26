@@ -1,22 +1,22 @@
-import React, { createContext, useState, useMemo } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import React, { useState, createContext } from 'react';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
-import { motion } from 'framer-motion';
-import Login from './Login';
-import History from './History';
-import Recommendations from './Recommendations';
-import Profile from './Profile';
 import { QueryClient, QueryClientProvider } from 'react-query';
-import theme from './theme';
+import Login from './Login';
+import Recommendations from './Recommendations';
+import History from './History';
+import Profile from './Profile';
+import Search from './Search';
 
 export const ThemeContext = createContext();
 
+// Создаём экземпляр QueryClient
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
+      retry: 1, // Количество попыток при ошибке
+      staleTime: 5 * 60 * 1000, // Данные считаются свежими 5 минут
     },
   },
 });
@@ -24,62 +24,58 @@ const queryClient = new QueryClient({
 function App() {
   const [mode, setMode] = useState('light');
 
-  const muiTheme = useMemo(
-    () =>
-      createTheme({
-        ...theme,
-        palette: {
-          ...theme.palette,
-          mode,
-          background: {
-            default: mode === 'light' ? '#fff' : '#121212',
-            paper: mode === 'light' ? '#fff' : '#1e1e1e',
-          },
-          cardBorder: mode === 'light' ? '#e0e0e0' : '#424242',
-          text: {
-            primary: mode === 'light' ? '#333' : '#fff',
-            secondary: mode === 'light' ? '#666' : '#bbb',
+  const theme = createTheme({
+    palette: {
+      mode,
+      primary: {
+        main: '#3b82f6',
+      },
+      background: {
+        default: mode === 'light' ? '#e8f0fe' : '#1a202c',
+        paper: mode === 'light' ? '#ffffff' : '#2d3748',
+      },
+      text: {
+        primary: mode === 'light' ? '#000000' : '#ffffff',
+        secondary: mode === 'light' ? '#555555' : '#b0b0b0',
+      },
+      cardBorder: mode === 'light' ? 'rgba(0, 0, 0, 0.12)' : 'rgba(255, 255, 255, 0.12)',
+    },
+    typography: {
+      fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    },
+    components: {
+      MuiButton: {
+        styleOverrides: {
+          root: {
+            textTransform: 'none',
           },
         },
-      }),
-    [mode]
-  );
+      },
+    },
+  });
 
   const toggleTheme = () => {
     setMode((prevMode) => (prevMode === 'light' ? 'dark' : 'light'));
   };
 
-  const themeContextValue = { toggleTheme, mode };
-
-  const backgroundVariants = {
-    light: { backgroundColor: '#fff' },
-    dark: { backgroundColor: '#121212' },
-  };
-
   return (
-    <QueryClientProvider client={queryClient}>
-      <ThemeContext.Provider value={themeContextValue}>
-        <ThemeProvider theme={muiTheme}>
-          <motion.div
-            animate={mode === 'light' ? 'light' : 'dark'}
-            variants={backgroundVariants}
-            transition={{ duration: 0.5, ease: 'easeInOut' }}
-            style={{ minHeight: '100vh' }}
-          >
-            <CssBaseline />
-            <Router>
-              <Routes>
-                <Route path="/login" element={<Login />} />
-                <Route path="/history" element={<History />} />
-                <Route path="/recommend" element={<Recommendations />} />
-                <Route path="/profile" element={<Profile />} />
-                <Route path="*" element={<Navigate to="/login" replace />} />
-              </Routes>
-            </Router>
-          </motion.div>
+    <ThemeContext.Provider value={{ mode, toggleTheme }}>
+      <QueryClientProvider client={queryClient}> {/* Оборачиваем приложение в QueryClientProvider */}
+        <ThemeProvider theme={theme}>
+          <CssBaseline />
+          <Router>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/recommend" element={<Recommendations />} />
+              <Route path="/history" element={<History />} />
+              <Route path="/profile" element={<Profile />} />
+              <Route path="/search" element={<Search />} />
+              <Route path="/" element={<Login />} />
+            </Routes>
+          </Router>
         </ThemeProvider>
-      </ThemeContext.Provider>
-    </QueryClientProvider>
+      </QueryClientProvider>
+    </ThemeContext.Provider>
   );
 }
 

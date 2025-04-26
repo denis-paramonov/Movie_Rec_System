@@ -124,11 +124,11 @@ def get_history():
     logger.info(f"Requesting watch history for user {user_id}")
     
     try:
-        logs = pd.read_csv('/app/data/logs.csv')
-        movies = pd.read_csv('/app/data/movies.csv')
-        genres_df = pd.read_csv('/app/data/genres.csv')
-        countries_df = pd.read_csv('/app/data/countries.csv')
-        staff_df = pd.read_csv('/app/data/staff.csv')
+        logs = pd.read_csv('/app/data/logs.csv', encoding='utf-8')
+        movies = pd.read_csv('/app/data/movies.csv', encoding='utf-8')
+        genres_df = pd.read_csv('/app/data/genres.csv', encoding='utf-8')
+        countries_df = pd.read_csv('/app/data/countries.csv', encoding='utf-8')
+        staff_df = pd.read_csv('/app/data/staff.csv', encoding='utf-8')
         
         user_logs = logs[logs['user_id'] == user_id][['movie_id']].drop_duplicates()
         
@@ -144,14 +144,14 @@ def get_history():
         )
         
         history['id'] = history['id'].fillna(-1).astype(int)
-        history['name'] = history['name'].fillna('Unknown')
+        history['name'] = history['name'].fillna('Unknown').str.strip()
         history['description'] = history['description'].fillna('')
         history['link'] = history['link'].fillna('https://via.placeholder.com/150')
         history['reviews'] = history['reviews'].fillna('[]')
         
         def fix_reviews(reviews_str):
             try:
-                reviews_list = eval(reviews_str) if isinstance(reviews_str, str) and reviews_str.strip() else []
+                reviews_list = json.loads(reviews_str) if isinstance(reviews_str, str) and reviews_str.strip() else []
                 return json.dumps(reviews_list, ensure_ascii=False)
             except Exception as e:
                 logger.warning(f"Failed to parse reviews: {reviews_str}, error: {str(e)}")
@@ -176,16 +176,9 @@ def get_history():
         
         history['year'] = history['year'].apply(clean_year)
         
-        def safe_eval(x):
-            try:
-                return eval(x) if isinstance(x, str) and x.strip() else []
-            except:
-                logger.warning(f"Failed to eval: {x}")
-                return []
-        
-        history['genres'] = history['genres'].apply(safe_eval)
-        history['countries'] = history['countries'].apply(safe_eval)
-        history['staff'] = history['staff'].apply(safe_eval)
+        history['genres'] = history['genres'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
+        history['countries'] = history['countries'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
+        history['staff'] = history['staff'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
         
         genres_map = dict(zip(genres_df['id'], genres_df['name']))
         countries_map = dict(zip(countries_df['id'], countries_df['name']))
@@ -201,6 +194,101 @@ def get_history():
     except Exception as e:
         logger.error(f"Failed to get history: {str(e)}")
         return jsonify({"error": "Failed to get history"}), 500
+
+@app.route('/movies', methods=['GET'])
+def get_movies():
+    search_query = request.args.get('search', '').lower().strip()
+    year = request.args.get('year', type=int)
+    country = request.args.get('country', '').strip().lower()
+    genre = request.args.get('genre', '').strip().lower()
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 20, type=int)
+
+    logger.info(f"Requesting movies with filters: search={search_query}, year={year}, country={country}, genre={genre}, page={page}, per_page={per_page}")
+    
+    try:
+        movies = pd.read_csv('/app/data/movies.csv', encoding='utf-8')
+        genres_df = pd.read_csv('/app/data/genres.csv', encoding='utf-8')
+        countries_df = pd.read_csv('/app/data/countries.csv', encoding='utf-8')
+        staff_df = pd.read_csv('/app/data/staff.csv', encoding='utf-8')
+        
+        # Подготовка данных фильмов
+        movies['id'] = movies['id'].fillna(-1).astype(int)
+        movies['name'] = movies['name'].fillna('Unknown').str.strip()
+        movies['description'] = movies['description'].fillna('')
+        movies['link'] = movies['link'].fillna('https://via.placeholder.com/150')
+        movies['reviews'] = movies['reviews'].fillna('[]')
+        
+        def fix_reviews(reviews_str):
+            try:
+                reviews_list = json.loads(reviews_str) if isinstance(reviews_str, str) and reviews_str.strip() else []
+                return json.dumps(reviews_list, ensure_ascii=False)
+            except Exception as e:
+                logger.warning(f"Failed to parse reviews: {reviews_str}, error: {str(e)}")
+                return '[]'
+        
+        movies['reviews'] = movies['reviews'].apply(fix_reviews)
+        
+        def clean_year(y):
+            if pd.isna(y):
+                return 0
+            if isinstance(y, str) and '-' in y:
+                try:
+                    return int(y.split('-')[0])
+                except:
+                    logger.warning(f"Invalid year format: {y}")
+                    return 0
+            try:
+                return int(y)
+            except:
+                logger.warning(f"Invalid year value: {y}")
+                return 0
+        
+        movies['year'] = movies['year'].apply(clean_year)
+        
+        movies['genres'] = movies['genres'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
+        movies['countries'] = movies['countries'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
+        movies['staff'] = movies['staff'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
+        
+        genres_map = dict(zip(genres_df['id'], genres_df['name']))
+        countries_map = dict(zip(countries_df['id'], countries_df['name']))
+        staff_map = dict(zip(staff_df['id'], staff_df['name']))
+        
+        movies['genres'] = movies['genres'].apply(lambda x: [genres_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
+        movies['country'] = movies['countries'].apply(lambda x: [countries_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
+        movies['actors'] = movies['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
+        
+        # Фильтрация
+        filtered_movies = movies
+        logger.info(f"Search query: {search_query}")
+        if search_query:
+            filtered_movies = filtered_movies[filtered_movies['name'].str.lower().str.contains(search_query, na=False)]
+        if year:
+            filtered_movies = filtered_movies[filtered_movies['year'] == year]
+        if country:
+            filtered_movies = filtered_movies[filtered_movies['country'].apply(lambda x: country in [c.lower() for c in x] if isinstance(x, list) else False)]
+        if genre:
+            filtered_movies = filtered_movies[filtered_movies['genres'].apply(lambda x: genre in [g.lower() for g in x] if isinstance(x, list) else False)]
+        
+        # Пагинация
+        total = len(filtered_movies)
+        start = (page - 1) * per_page
+        end = start + per_page
+        paginated_movies = filtered_movies.iloc[start:end]
+        
+        result = paginated_movies[['id', 'name', 'description', 'genres', 'country', 'actors', 'link', 'year', 'reviews']].to_dict('records')
+        
+        logger.info(f"Retrieved {len(result)} movies out of {total} total after filtering")
+        return jsonify({
+            "movies": result,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": (total + per_page - 1) // per_page
+        }), 200
+    except Exception as e:
+        logger.error(f"Failed to get movies: {str(e)}")
+        return jsonify({"error": "Failed to get movies"}), 500
 
 @app.route('/profile', methods=['GET'])
 def get_profile():
@@ -263,24 +351,17 @@ def change_password():
 @app.route('/analytics', methods=['GET'])
 def get_analytics():
     user_id = request.args.get('user_id', type=int)
-    min_movies = request.args.get('min_movies', default=1, type=int)  # Фильтр для топ-актёров
+    min_movies = request.args.get('min_movies', default=1, type=int)
     if not user_id:
         return jsonify({"error": "user_id is required"}), 400
     logger.info(f"Requesting analytics for user {user_id}")
 
-    def safe_eval(x):
-        try:
-            return eval(x) if isinstance(x, str) and x.strip() else []
-        except:
-            logger.warning(f"Failed to eval: {x}")
-            return []
-    
     try:
-        logs = pd.read_csv('/app/data/logs.csv')
-        movies = pd.read_csv('/app/data/movies.csv')
-        genres_df = pd.read_csv('/app/data/genres.csv')
-        countries_df = pd.read_csv('/app/data/countries.csv')
-        staff_df = pd.read_csv('/app/data/staff.csv')
+        logs = pd.read_csv('/app/data/logs.csv', encoding='utf-8')
+        movies = pd.read_csv('/app/data/movies.csv', encoding='utf-8')
+        genres_df = pd.read_csv('/app/data/genres.csv', encoding='utf-8')
+        countries_df = pd.read_csv('/app/data/countries.csv', encoding='utf-8')
+        staff_df = pd.read_csv('/app/data/staff.csv', encoding='utf-8')
         
         user_logs = logs[logs['user_id'] == user_id]
         if user_logs.empty:
@@ -291,9 +372,8 @@ def get_analytics():
                 "top_actors": []
             }), 200
         
-        # 1. Распределение по жанрам
         user_movies = user_logs.merge(movies, left_on='movie_id', right_on='id', how='inner')
-        user_movies['genres'] = user_movies['genres'].apply(safe_eval)
+        user_movies['genres'] = user_movies['genres'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
         genre_counts = {}
         for genres in user_movies['genres']:
             for genre_id in genres:
@@ -301,8 +381,7 @@ def get_analytics():
                 genre_counts[genre_name] = genre_counts.get(genre_name, 0) + 1
         genres_data = [{"name": k, "value": v} for k, v in genre_counts.items()]
         
-        # 2. Распределение по странам
-        user_movies['countries'] = user_movies['countries'].apply(safe_eval)
+        user_movies['countries'] = user_movies['countries'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
         country_counts = {}
         for countries in user_movies['countries']:
             for country_id in countries:
@@ -310,18 +389,15 @@ def get_analytics():
                 country_counts[country_name] = country_counts.get(country_name, 0) + 1
         countries_data = [{"name": k, "value": v} for k, v in country_counts.items()]
         
-        # 3. Динамика просмотров по дням недели
         user_logs['datetime'] = pd.to_datetime(user_logs['datetime'])
         user_logs['weekday'] = user_logs['datetime'].dt.day_name()
         weekday_views = user_logs.groupby('weekday')['duration'].sum().reset_index()
-        # Упорядочиваем дни недели
         days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         weekday_views['weekday'] = pd.Categorical(weekday_views['weekday'], categories=days_order, ordered=True)
         weekday_views = weekday_views.sort_values('weekday')
         weekday_views_data = weekday_views.to_dict('records')
         
-        # 4. Топ актёров с фильтром
-        user_movies['staff'] = user_movies['staff'].apply(safe_eval)
+        user_movies['staff'] = user_movies['staff'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
         staff_counts = {}
         for staff in user_movies['staff']:
             for staff_id in staff:
@@ -329,7 +405,6 @@ def get_analytics():
                 if staff_role == 'actor':
                     staff_name = staff_df[staff_df['id'] == staff_id]['name'].iloc[0] if staff_id in staff_df['id'].values else str(staff_id)
                     staff_counts[staff_name] = staff_counts.get(staff_name, 0) + 1
-        # Фильтруем актёров по минимальному количеству фильмов
         filtered_staff_counts = {k: v for k, v in staff_counts.items() if v >= min_movies}
         top_actors = [{"name": k, "value": v} for k, v in sorted(filtered_staff_counts.items(), key=lambda x: x[1], reverse=True)[:10]]
         

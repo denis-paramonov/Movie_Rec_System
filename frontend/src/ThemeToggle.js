@@ -11,15 +11,25 @@ function ThemeToggle({ sx }) {
   const handleToggle = () => {
     setIsSwitching(true);
     toggleTheme();
-    setTimeout(() => setIsSwitching(false), 500); // Анимация длится 0.5 секунды
+    setTimeout(() => setIsSwitching(false), 600); // Анимация длится 0.6 секунды
   };
 
   const iconVariants = {
-    light: { rotate: 360 },
-    dark: { rotate: 0 },
+    initial: { scale: 1, opacity: 1 },
     switching: {
-      rotate: [0, 360],
-      transition: { duration: 0.5, repeat: 1 },
+      scale: [1, 1.3, 1], // Масштабирование: увеличение и возврат
+      opacity: [1, 0.5, 1], // Лёгкое затухание и возврат
+      color: mode === 'light' ? ['#3b82f6', '#a78bfa', '#3b82f6'] : ['#a78bfa', '#3b82f6', '#a78bfa'], // Переход цвета
+      transition: {
+        duration: 0.6,
+        ease: 'easeInOut',
+        times: [0, 0.5, 1],
+      },
+    },
+    hover: {
+      scale: 1.1,
+      rotate: 10, // Небольшой поворот при наведении
+      transition: { duration: 0.3 },
     },
   };
 
@@ -27,18 +37,15 @@ function ThemeToggle({ sx }) {
     <Tooltip title={mode === 'light' ? 'Тёмная тема' : 'Светлая тема'}>
       <IconButton
         component={motion.button}
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
+        variants={iconVariants}
+        initial="initial"
+        animate={isSwitching ? 'switching' : 'initial'}
+        whileHover="hover"
         onClick={handleToggle}
         color="inherit"
         sx={sx}
       >
-        <motion.div
-          animate={isSwitching ? 'switching' : mode === 'light' ? 'light' : 'dark'}
-          variants={iconVariants}
-        >
-          {mode === 'light' ? <Brightness4 /> : <Brightness7 />}
-        </motion.div>
+        {mode === 'light' ? <Brightness4 /> : <Brightness7 />}
       </IconButton>
     </Tooltip>
   );

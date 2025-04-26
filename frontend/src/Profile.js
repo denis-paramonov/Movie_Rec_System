@@ -23,6 +23,7 @@ import {
   Person,
   Logout,
   Lock,
+  Search as SearchIcon, // Добавляем иконку поиска
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import axios from 'axios';
@@ -160,6 +161,17 @@ function Profile() {
             Профиль
           </Typography>
           <Box sx={{ display: 'flex', gap: 1 }}>
+            <Tooltip title="Поиск">
+              <IconButton
+                component={motion.button}
+                whileHover={{ scale: 1.1 }}
+                whileTap={{ scale: 0.9 }}
+                color="inherit"
+                onClick={() => navigate(`/search?user_id=${userId}`)}
+              >
+                <SearchIcon />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="Рекомендации">
               <IconButton
                 component={motion.button}
@@ -237,7 +249,7 @@ function Profile() {
             variant="contained"
             sx={{
               mt: 2,
-              backgroundColor: '#3b82f6', // Используем синий из новой палитры
+              backgroundColor: '#3b82f6',
               '&:hover': {
                 backgroundColor: '#60a5fa',
               },

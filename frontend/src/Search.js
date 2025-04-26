@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import {
   Container,
   Typography,
@@ -6,6 +6,11 @@ import {
   Card,
   CardMedia,
   CardContent,
+  TextField,
+  MenuItem,
+  Select,
+  InputLabel,
+  FormControl,
   Dialog,
   DialogTitle,
   DialogContent,
@@ -23,52 +28,83 @@ import {
   IconButton,
   Tooltip,
   Button,
+  Pagination,
 } from '@mui/material';
-import { Movie, History, Person, Logout, ExpandMore, ExpandLess, Search as SearchIcon } from '@mui/icons-material';
+import { Movie, History, Person, Logout, Search as SearchIcon, ExpandMore, ExpandLess } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import { useQuery } from 'react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import { ThemeContext } from './App';
 
-function Recommendations() {
-  const [recommendations, setRecommendations] = useState([]);
-  const [selectedMovie, setSelectedMovie] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+function Search() {
   const [searchParams] = useSearchParams();
   const userId = searchParams.get('user_id');
   const navigate = useNavigate();
-  const [tabValue, setTabValue] = useState('details');
-  const [expandedReviews, setExpandedReviews] = useState({});
   const { mode } = useContext(ThemeContext);
 
-  const fetchRecommendations = useCallback(async () => {
-    if (!userId) {
-      setError('Идентификатор пользователя не указан');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await axios.get(`http://localhost:5001/recommend?user_id=${userId}`);
-      console.log('Recommendations response:', response.data);
-      setRecommendations(Array.isArray(response.data) ? response.data : []);
-    } catch (error) {
-      console.error('Не удалось загрузить рекомендации:', error);
-      setError('Ошибка загрузки рекомендаций');
-      setRecommendations([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
+  // Фильтры
+  const [searchQuery, setSearchQuery] = useState('');
+  const [yearFilter, setYearFilter] = useState('');
+  const [countryFilter, setCountryFilter] = useState('');
+  const [genreFilter, setGenreFilter] = useState('');
+  const [page, setPage] = useState(1);
 
-  useEffect(() => {
-    fetchRecommendations();
-  }, [fetchRecommendations]);
+  // Списки для фильтров (загружаем один раз)
+  const [years, setYears] = useState([]);
+  const [countries, setCountries] = useState([]);
+  const [genres, setGenres] = useState([]);
+  const [filtersLoaded, setFiltersLoaded] = useState(false);
+
+  const [selectedMovie, setSelectedMovie] = useState(null);
+  const [tabValue, setTabValue] = useState('details');
+  const [expandedReviews, setExpandedReviews] = useState({});
+
+  // Загрузка уникальных значений для фильтров (один раз)
+  const { data: allMoviesData, isLoading: filtersLoading } = useQuery({
+    queryKey: ['movies_filters'],
+    queryFn: async () => {
+      const response = await axios.get('http://localhost:5001/movies');
+      return response.data.movies;
+    },
+    onSuccess: (movies) => {
+      const validMovies = Array.isArray(movies)
+        ? movies.filter((movie) => movie && typeof movie === 'object' && 'id' in movie)
+        : [];
+      const uniqueYears = [...new Set(validMovies.map(movie => movie.year).filter(year => year))].sort();
+      const uniqueCountries = [...new Set(validMovies.flatMap(movie => movie.country).filter(country => country))];
+      const uniqueGenres = [...new Set(validMovies.flatMap(movie => movie.genres).filter(genre => genre))];
+      setYears(uniqueYears);
+      setCountries(uniqueCountries);
+      setGenres(uniqueGenres);
+      setFiltersLoaded(true);
+    },
+  });
+
+  // Запрос фильмов с фильтрами и пагинацией
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['movies', searchQuery, yearFilter, countryFilter, genreFilter, page],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (searchQuery) params.append('search', searchQuery);
+      if (yearFilter) params.append('year', Number(yearFilter)); // Преобразуем в число
+      if (countryFilter) params.append('country', countryFilter);
+      if (genreFilter) params.append('genre', genreFilter);
+      params.append('page', page);
+      params.append('per_page', 21);
+      console.log('Sending request with params:', params.toString()); // Логирование для отладки
+      const response = await axios.get(`http://localhost:5001/movies?${params.toString()}`);
+      console.log('Received response:', response.data); // Логирование ответа
+      return response.data;
+    },
+    enabled: filtersLoaded, // Запрашиваем фильмы только после загрузки фильтров
+  });
+
+  const movies = data?.movies || [];
+  const totalPages = data?.total_pages || 1;
 
   const handleCardClick = (movie) => {
-    console.log('Selected movie:', movie);
     setSelectedMovie(movie);
     setTabValue('details');
     setExpandedReviews({});
@@ -96,17 +132,12 @@ function Recommendations() {
   };
 
   const parseReviews = (reviewsStr) => {
-    console.log('Parsing reviews:', reviewsStr, typeof reviewsStr);
-    if (!reviewsStr || typeof reviewsStr !== 'string') {
-      console.warn('Reviews is empty or not a string:', reviewsStr);
-      return [];
-    }
+    if (!reviewsStr || typeof reviewsStr !== 'string') return [];
     try {
       const parsed = JSON.parse(reviewsStr);
-      console.log('Parsed reviews:', parsed);
       return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      console.error('Ошибка парсинга отзывов:', e, 'Input:', reviewsStr);
+    } catch (error) {
+      console.error('Ошибка парсинга отзывов:', error);
       return [];
     }
   };
@@ -123,7 +154,7 @@ function Recommendations() {
       <AppBar position="sticky">
         <Toolbar sx={{ display: 'flex', justifyContent: 'space-between' }}>
           <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-            Рекомендации
+            Поиск фильмов
           </Typography>
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Tooltip title="Поиск">
@@ -185,89 +216,178 @@ function Recommendations() {
           </Box>
         </Toolbar>
       </AppBar>
+
       <Container maxWidth="lg" sx={{ mt: 4, p: 4, bgcolor: 'background.paper', borderRadius: 2, boxShadow: 3 }}>
         <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
-          Рекомендации для пользователя {userId || 'Неизвестный'}
+          Поиск фильмов
         </Typography>
-        {loading ? (
+
+        {/* Фильтры */}
+        <Box
+          sx={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 2,
+            mb: 4,
+            p: 2,
+            borderRadius: 2,
+            bgcolor: mode === 'light' ? '#f5f5f5' : '#2d3748',
+          }}
+        >
+          <TextField
+            label="Поиск по названию"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setPage(1); // Сбрасываем страницу при изменении фильтров
+            }}
+            variant="outlined"
+            sx={{ flex: '1 1 200px', minWidth: 200 }}
+          />
+          <FormControl sx={{ flex: '1 1 150px', minWidth: 150 }}>
+            <InputLabel>Год</InputLabel>
+            <Select
+              value={yearFilter}
+              onChange={(e) => {
+                setYearFilter(e.target.value);
+                setPage(1);
+              }}
+              label="Год"
+            >
+              <MenuItem value="">Все годы</MenuItem>
+              {years.map((year) => (
+                <MenuItem key={year} value={year}>
+                  {year}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl sx={{ flex: '1 1 150px', minWidth: 150 }}>
+            <InputLabel>Страна</InputLabel>
+            <Select
+              value={countryFilter}
+              onChange={(e) => {
+                setCountryFilter(e.target.value);
+                setPage(1);
+              }}
+              label="Страна"
+            >
+              <MenuItem value="">Все страны</MenuItem>
+              {countries.map((country) => (
+                <MenuItem key={country} value={country}>
+                  {country}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <FormControl sx={{ flex: '1 1 150px', minWidth: 150 }}>
+            <InputLabel>Жанр</InputLabel>
+            <Select
+              value={genreFilter}
+              onChange={(e) => {
+                setGenreFilter(e.target.value);
+                setPage(1);
+              }}
+              label="Жанр"
+            >
+              <MenuItem value="">Все жанры</MenuItem>
+              {genres.map((genre) => (
+                <MenuItem key={genre} value={genre}>
+                  {genre}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        </Box>
+
+        {/* Результаты поиска */}
+        {isLoading || filtersLoading ? (
           <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />
         ) : error ? (
           <Typography variant="h6" color="error" align="center" sx={{ mt: 4 }}>
-            {error}
+            Ошибка загрузки фильмов
           </Typography>
-        ) : recommendations.length === 0 ? (
+        ) : movies.length === 0 ? (
           <Typography variant="h6" color="text.secondary" align="center" sx={{ mt: 4 }}>
-            Нет доступных рекомендаций
+            Фильмы не найдены
           </Typography>
         ) : (
-          <Grid container spacing={4}>
-            {recommendations.map((movie, index) => (
-              <Grid item xs={12} sm={6} md={4} lg={4} key={movie.id || `movie-${index}`}>
-                <Card
-                  component={motion.div}
-                  whileHover={{ scale: 1.05, rotate: 1 }}
-                  whileTap={{ scale: 0.95 }}
-                  sx={{
-                    height: '100%',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    border: (theme) => `1px solid ${theme.palette.cardBorder}`,
-                    transition: 'transform 0.3s ease, box-shadow 0.3s ease',
-                    '&:hover': {
-                      boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
-                    },
-                    animation: 'fadeIn 0.5s ease-in-out',
-                    '@keyframes fadeIn': {
-                      '0%': { opacity: 0, transform: 'translateY(20px)' },
-                      '100%': { opacity: 1, transform: 'translateY(0)' },
-                    },
-                    maxWidth: { xs: 300, sm: '100%' },
-                    mx: { xs: 'auto', sm: 0 },
-                  }}
-                  onClick={() => handleCardClick(movie)}
-                >
-                  <CardMedia
-                    component="img"
+          <>
+            <Grid container spacing={4}>
+              {movies.map((movie, index) => (
+                <Grid item xs={12} sm={6} md={4} lg={4} key={movie.id || `movie-${index}`}>
+                  <Card
+                    component={motion.div}
+                    whileHover={{ scale: 1.05, rotate: 1 }}
+                    whileTap={{ scale: 0.95 }}
                     sx={{
-                      aspectRatio: '2/3',
-                      objectFit: 'contain',
-                      width: '100%',
-                      backgroundColor: 'background.paper',
+                      height: '100%',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      border: (theme) => `1px solid ${theme.palette.cardBorder}`,
+                      transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+                      '&:hover': {
+                        boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
+                      },
+                      maxWidth: { xs: 300, sm: '100%' },
+                      mx: { xs: 'auto', sm: 0 },
                     }}
-                    image={movie.link || 'https://via.placeholder.com/600x900?text=Нет+изображения'}
-                    alt={movie.name || 'Неизвестный'}
-                    onError={(e) => {
-                      e.target.src = 'https://via.placeholder.com/600x900?text=Нет+изображения';
-                    }}
-                  />
-                  <CardContent sx={{ flexGrow: 1, textAlign: 'center' }}>
-                    <Typography variant="h6" sx={{ fontWeight: 'medium' }}>
-                      {movie.name || 'Неизвестный'}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      {movie.year || 'Н/Д'}
-                    </Typography>
-                  </CardContent>
-                </Card>
-              </Grid>
-            ))}
-          </Grid>
+                    onClick={() => handleCardClick(movie)}
+                  >
+                    <CardMedia
+                      component="img"
+                      sx={{
+                        aspectRatio: '2/3',
+                        objectFit: 'contain',
+                        width: '100%',
+                        backgroundColor: 'background.paper',
+                      }}
+                      image={movie.link || 'https://via.placeholder.com/600x900?text=Нет+изображения'}
+                      alt={movie.name || 'Неизвестный'}
+                      onError={(e) => {
+                        e.target.src = 'https://via.placeholder.com/600x900?text=Нет+изображения';
+                      }}
+                    />
+                    <CardContent sx={{ flexGrow: 1, textAlign: 'center' }}>
+                      <Typography variant="h6" sx={{ fontWeight: 'medium' }}>
+                        {movie.name || 'Неизвестный'}
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {movie.year || 'Н/Д'}
+                      </Typography>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              ))}
+            </Grid>
+
+            {/* Пагинация */}
+            {totalPages > 1 && (
+              <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
+                <Pagination
+                  count={totalPages}
+                  page={page}
+                  onChange={(e, value) => setPage(value)}
+                  color="primary"
+                />
+              </Box>
+            )}
+          </>
         )}
 
+        {/* Диалог с деталями фильма */}
         {selectedMovie && (
           <Dialog
             open={!!selectedMovie}
             onClose={handleCloseDialog}
             maxWidth="md"
             fullWidth
-            sx={{
-              '& .MuiDialog-paper': {
-                animation: 'dialogFadeIn 0.3s ease-in-out',
-                '@keyframes dialogFadeIn': {
-                  '0%': { opacity: 0, transform: 'scale(0.9)' },
-                  '100%': { opacity: 1, transform: 'scale(1)' },
-                },
-              },
+            TransitionComponent={motion.div}
+            TransitionProps={{
+              initial: { opacity: 0, scale: 0.9 },
+              animate: { opacity: 1, scale: 1 },
+              exit: { opacity: 0, scale: 0.9 },
+              transition: { duration: 0.3, ease: 'easeInOut' },
             }}
           >
             <DialogTitle>{selectedMovie.name || 'Неизвестный'}</DialogTitle>
@@ -367,7 +487,15 @@ function Recommendations() {
               )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={handleCloseDialog} color="primary" variant="contained" sx={{ borderRadius: 8, backgroundColor: '#3b82f6', '&:hover': { backgroundColor: '#60a5fa' } }}>
+              <Button
+                onClick={handleCloseDialog}
+                variant="contained"
+                sx={{
+                  borderRadius: 8,
+                  backgroundColor: '#3b82f6',
+                  '&:hover': { backgroundColor: '#60a5fa' },
+                }}
+              >
                 Закрыть
               </Button>
             </DialogActions>
@@ -378,4 +506,4 @@ function Recommendations() {
   );
 }
 
-export default Recommendations;
+export default Search;
