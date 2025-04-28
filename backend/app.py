@@ -24,7 +24,7 @@ DB_CONFIG = {
 }
 
 RECOMMENDER_URL = "http://recommender:5000/recommend"
-GIGACHAT_AUTH_TOKEN = os.getenv('GIGACHAT_AUTH_TOKEN', '')  # Переменная окружения для токена
+GIGACHAT_AUTH_TOKEN = os.getenv('GIGACHAT_AUTH_TOKEN', '')
 
 def check_credentials(username, password):
     conn = psycopg2.connect(**DB_CONFIG)
@@ -139,7 +139,6 @@ def register():
 @app.route('/login', methods=['POST'])
 def login():
     data = request.get_json()
-    logger.info(f'{data}')
     username = data.get('username')
     password = data.get('password')
     if not username or not password:
@@ -245,13 +244,13 @@ def get_history():
 @app.route('/movies', methods=['GET'])
 def get_movies():
     search_query = request.args.get('search', '').lower().strip()
-    year = request.args.get('year', type=int)
-    country = request.args.get('country', '').strip().lower()
-    genre = request.args.get('genre', '').strip().lower()
+    years = request.args.get('years', '').strip().split(',') if request.args.get('years') else []
+    countries = request.args.get('countries', '').strip().split(',') if request.args.get('countries') else []
+    genres = request.args.get('genres', '').strip().split(',') if request.args.get('genres') else []
     page = request.args.get('page', 1, type=int)
     per_page = request.args.get('per_page', 20, type=int)
 
-    logger.info(f"Requesting movies with filters: search={search_query}, year={year}, country={country}, genre={genre}, page={page}, per_page={per_page}")
+    logger.info(f"Requesting movies with filters: search={search_query}, years={years}, countries={countries}, genres={genres}, page={page}, per_page={per_page}")
     
     try:
         movies = pd.read_csv('/app/data/movies.csv', encoding='utf-8')
@@ -305,15 +304,17 @@ def get_movies():
         movies['actors'] = movies['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
         
         filtered_movies = movies
-        logger.info(f"Search query: {search_query}")
         if search_query:
             filtered_movies = filtered_movies[filtered_movies['name'].str.lower().str.contains(search_query, na=False)]
-        if year:
-            filtered_movies = filtered_movies[filtered_movies['year'] == year]
-        if country:
-            filtered_movies = filtered_movies[filtered_movies['country'].apply(lambda x: country in [c.lower() for c in x] if isinstance(x, list) else False)]
-        if genre:
-            filtered_movies = filtered_movies[filtered_movies['genres'].apply(lambda x: genre in [g.lower() for g in x] if isinstance(x, list) else False)]
+        if years:
+            years = [int(y) for y in years if y]  # Преобразуем в числа, игнорируем пустые строки
+            filtered_movies = filtered_movies[filtered_movies['year'].isin(years)]
+        if countries:
+            countries = [c.lower() for c in countries]
+            filtered_movies = filtered_movies[filtered_movies['country'].apply(lambda x: any(c in [lc.lower() for lc in x] for c in countries) if isinstance(x, list) else False)]
+        if genres:
+            genres = [g.lower() for g in genres]
+            filtered_movies = filtered_movies[filtered_movies['genres'].apply(lambda x: any(g in [lg.lower() for lg in x] for g in genres) if isinstance(x, list) else False)]
         
         total = len(filtered_movies)
         start = (page - 1) * per_page
@@ -462,7 +463,7 @@ def get_analytics():
         logger.error(f"Failed to get analytics: {str(e)}")
         return jsonify({"error": "Failed to get analytics"}), 500
 
-import ast  # Добавляем импорт для ast.literal_eval
+import ast
 
 @app.route('/summarize', methods=['GET'])
 def summarize_reviews():
@@ -483,28 +484,24 @@ def summarize_reviews():
         reviews = []
         if isinstance(reviews_str, str) and reviews_str.strip():
             try:
-                # Пытаемся разобрать как JSON
                 reviews = json.loads(reviews_str)
             except json.JSONDecodeError as json_error:
                 logger.error(f"Invalid JSON in reviews for movie {movie_id}: {reviews_str}, error: {str(json_error)}")
                 try:
-                    # Пробуем разобрать как Python-литерал с помощью ast.literal_eval
                     reviews = ast.literal_eval(reviews_str)
                     logger.info(f"Successfully parsed reviews with ast.literal_eval for movie {movie_id}")
                 except (ValueError, SyntaxError) as ast_error:
                     logger.error(f"Failed to parse reviews with ast.literal_eval for movie {movie_id}: {reviews_str}, error: {str(ast_error)}")
                     reviews = []
 
-        # Проверяем, что reviews - это список
         if not isinstance(reviews, list):
             logger.warning(f"Reviews is not a list for movie {movie_id}: {reviews}")
             reviews = []
 
-        # Извлекаем текст отзывов, проверяя структуру
         review_texts = []
         for review in reviews:
             if isinstance(review, dict) and 'text' in review:
-                review_texts.append(str(review['text']))  # Приводим к строке для безопасности
+                review_texts.append(str(review['text']))
             else:
                 logger.warning(f"Invalid review format in movie {movie_id}: {review}")
 
@@ -527,6 +524,71 @@ def summarize_reviews():
     except Exception as e:
         logger.error(f"Failed to summarize reviews: {str(e)}")
         return jsonify({"error": "Failed to summarize reviews"}), 500
+    
+@app.route('/movies/filters', methods=['GET'])
+def get_movie_filters():
+    logger.info("Requesting unique filter values for movies")
+    
+    try:
+        movies = pd.read_csv('/app/data/movies.csv', encoding='utf-8')
+        genres_df = pd.read_csv('/app/data/genres.csv', encoding='utf-8')
+        countries_df = pd.read_csv('/app/data/countries.csv', encoding='utf-8')
+        
+        # Очистка и преобразование данных
+        def clean_year(y):
+            if pd.isna(y):
+                return None
+            if isinstance(y, str) and '-' in y:
+                try:
+                    return int(y.split('-')[0])
+                except:
+                    logger.warning(f"Invalid year format: {y}")
+                    return None
+            try:
+                return int(y)
+            except:
+                logger.warning(f"Invalid year value: {y}")
+                return None
+        
+        movies['year'] = movies['year'].apply(clean_year)
+        movies['genres'] = movies['genres'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
+        movies['countries'] = movies['countries'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
+        
+        genres_map = dict(zip(genres_df['id'], genres_df['name']))
+        countries_map = dict(zip(countries_df['id'], countries_df['name']))
+        
+        # Получение уникальных значений
+        unique_years = sorted(
+            [int(year) for year in movies['year'].dropna().unique() if year],
+            reverse=True
+        )
+        unique_countries = sorted(
+            set(
+                country
+                for countries in movies['countries']
+                for country_id in countries
+                if country_id in countries_map
+                for country in [countries_map[country_id]]
+            )
+        )
+        unique_genres = sorted(
+            set(
+                genre
+                for genres in movies['genres']
+                for genre_id in genres
+                if genre_id in genres_map
+                for genre in [genres_map[genre_id]]
+            )
+        )
+        
+        return jsonify({
+            "years": unique_years,
+            "countries": unique_countries,
+            "genres": unique_genres
+        }), 200
+    except Exception as e:
+        logger.error(f"Failed to get movie filters: {str(e)}")
+        return jsonify({"error": "Failed to get movie filters"}), 500
 
 
 if __name__ == '__main__':
