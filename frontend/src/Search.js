@@ -88,17 +88,27 @@ function Search() {
     queryFn: async () => {
       const params = new URLSearchParams();
       if (searchQuery) params.append('search', searchQuery);
-      if (yearFilter) params.append('year', Number(yearFilter)); // Преобразуем в число
+      if (yearFilter) params.append('year', Number(yearFilter));
       if (countryFilter) params.append('country', countryFilter);
       if (genreFilter) params.append('genre', genreFilter);
       params.append('page', page);
       params.append('per_page', 21);
-      console.log('Sending request with params:', params.toString()); // Логирование для отладки
+      console.log('Sending request with params:', params.toString());
       const response = await axios.get(`http://localhost:5001/movies?${params.toString()}`);
-      console.log('Received response:', response.data); // Логирование ответа
+      console.log('Received response:', response.data);
       return response.data;
     },
-    enabled: filtersLoaded, // Запрашиваем фильмы только после загрузки фильтров
+    enabled: filtersLoaded,
+  });
+
+  // Запрос саммаризации
+  const { data: summaryData, isLoading: summaryLoading, error: summaryError } = useQuery({
+    queryKey: ['summary', selectedMovie?.id],
+    queryFn: async () => {
+      const response = await axios.get(`http://localhost:5001/summarize?movie_id=${selectedMovie.id}`);
+      return response.data;
+    },
+    enabled: !!selectedMovie && tabValue === 'summary',
   });
 
   const movies = data?.movies || [];
@@ -222,7 +232,6 @@ function Search() {
           Поиск фильмов
         </Typography>
 
-        {/* Фильтры */}
         <Box
           sx={{
             display: 'flex',
@@ -239,7 +248,7 @@ function Search() {
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);
-              setPage(1); // Сбрасываем страницу при изменении фильтров
+              setPage(1);
             }}
             variant="outlined"
             sx={{ flex: '1 1 200px', minWidth: 200 }}
@@ -300,7 +309,6 @@ function Search() {
           </FormControl>
         </Box>
 
-        {/* Результаты поиска */}
         {isLoading || filtersLoading ? (
           <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />
         ) : error ? (
@@ -361,7 +369,6 @@ function Search() {
               ))}
             </Grid>
 
-            {/* Пагинация */}
             {totalPages > 1 && (
               <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
                 <Pagination
@@ -375,7 +382,6 @@ function Search() {
           </>
         )}
 
-        {/* Диалог с деталями фильма */}
         {selectedMovie && (
           <Dialog
             open={!!selectedMovie}
@@ -394,6 +400,7 @@ function Search() {
             <Tabs value={tabValue} onChange={handleTabChange} sx={{ px: 2 }}>
               <Tab label="Детали" value="details" />
               <Tab label="Отзывы" value="reviews" />
+              <Tab label="Саммари" value="summary" />
             </Tabs>
             <DialogContent sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, p: 2 }}>
               {tabValue === 'details' && (
@@ -482,6 +489,30 @@ function Search() {
                         </ListItem>
                       ))}
                     </List>
+                  )}
+                </Box>
+              )}
+              {tabValue === 'summary' && (
+                <Box sx={{ width: '100%' }}>
+                  {summaryLoading ? (
+                    <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />
+                  ) : summaryError ? (
+                    <Typography variant="body1" color="error" align="center">
+                      Ошибка загрузки саммари
+                    </Typography>
+                  ) : summaryData?.summary ? (
+                    <Box sx={{ p: 2, bgcolor: 'background.paper', borderRadius: 2, boxShadow: 1 }}>
+                      <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
+                        Саммари отзывов
+                      </Typography>
+                      <Typography variant="body1" sx={{ whiteSpace: 'pre-wrap' }}>
+                        {summaryData.summary}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <Typography variant="body1" color="text.secondary" align="center">
+                      Нет саммари для отображения
+                    </Typography>
                   )}
                 </Box>
               )}

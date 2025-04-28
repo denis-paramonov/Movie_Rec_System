@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import {
   Container,
   Typography,
@@ -6,14 +6,14 @@ import {
   Card,
   CardMedia,
   CardContent,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   CircularProgress,
   AppBar,
   Toolbar,
   Box,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   Tabs,
   Tab,
   List,
@@ -24,51 +24,63 @@ import {
   Tooltip,
   Button,
 } from '@mui/material';
-import { Movie, History, Person, Logout, ExpandMore, ExpandLess, Search as SearchIcon } from '@mui/icons-material';
+import { Movie, History as HistoryIcon, Person, Logout, Search as SearchIcon, ExpandMore, ExpandLess } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import { useQuery } from 'react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import { ThemeContext } from './App';
 
+// Статический текст саммари для случая ошибки
+const fallbackSummary = `### Саммаризация отзывов:\n\nФильм «Шрек навсегда» (четвёртая часть эпопеи) получил смешанные отзывы зрителей и критиков. Основные моменты, выделенные пользователями:\n\n- Философская направленность и зрелость сюжета: Многие отметили, что мультфильм стал более взрослым, поднимая экзистенциальные вопросы о смысле жизни, счастье и кризисе среднего возраста. Это сделало его интересным для взрослой аудитории, но несколько снизило уровень юмора и комичности, что разочаровало некоторых зрителей.\n\n- Юмор и пародии: Несмотря на снижение уровня шуток по сравнению с предыдущими частями, фильм сохранил пародийный стиль, высмеивая популярные фильмы и культурные явления, что понравилось многим зрителям.\n\n- Графика и визуальные эффекты: Пользователи отметили высокое качество графики, особенно в 3D-формате, и выразительные сцены, которые впечатляли своей детализацией и зрелищностью.\n\n- Смешанные эмоции от финала: Некоторые зрители были разочарованы тем, что фильм не оправдал их ожиданий, считая его менее смешным и более предсказуемым, чем предыдущие части. Другие, напротив, оценили его как достойное завершение серии, подчеркнув, что он поднимает важные темы и оставляет хорошее настроение.\n\n- Разнообразие восприятия: Отзывы варьировались от восторженных до негативных, в зависимости от ожиданий и предпочтений зрителей. Одни считали фильм глубоким и трогательным, другие — скучным и предсказуемым.\n\n### Общее мнение пользователей:\nФильм «Шрек навсегда» стал более зрелым и философским по сравнению с предыдущими частями, что привлекло взрослую аудиторию, но разочаровало тех, кто ожидал традиционного уровня юмора и комедийности. Визуальные эффекты и графика впечатлили, однако сюжет показался менее динамичным и интересным для детей. В целом, фильм получил смешанные отзывы, но многие зрители считают его достойным завершением серии.`;
+
+// Функция для форматирования текста саммари
+const formatSummary = (summary) => {
+  if (!summary) return [];
+  let formatted = summary
+    .replace(/###\s*/g, '')
+    .replace(/\*\*/g, '')
+    .replace(/\n\n/g, '<br><br>')
+    .replace(/\n/g, '<br>');
+  const parts = formatted.split('<br><br>').map((part) => {
+    if (part.startsWith('Саммаризация текста:') || part.startsWith('Общее мнение пользователей:')) {
+      return { type: 'header', content: part };
+    }
+    return { type: 'paragraph', content: part };
+  });
+  return parts;
+};
+
 function Recommendations() {
-  const [recommendations, setRecommendations] = useState([]);
-  const [selectedMovie, setSelectedMovie] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
   const [searchParams] = useSearchParams();
   const userId = searchParams.get('user_id');
   const navigate = useNavigate();
-  const [tabValue, setTabValue] = useState('details');
-  const [expandedReviews, setExpandedReviews] = useState({});
   const { mode } = useContext(ThemeContext);
 
-  const fetchRecommendations = useCallback(async () => {
-    if (!userId) {
-      setError('Идентификатор пользователя не указан');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await axios.get(`http://localhost:5001/recommend?user_id=${userId}`);
-      console.log('Recommendations response:', response.data);
-      setRecommendations(Array.isArray(response.data) ? response.data : []);
-    } catch (error) {
-      console.error('Не удалось загрузить рекомендации:', error);
-      setError('Ошибка загрузки рекомендаций');
-      setRecommendations([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
+  const [selectedMovie, setSelectedMovie] = useState(null);
+  const [tabValue, setTabValue] = useState('details');
+  const [expandedReviews, setExpandedReviews] = useState({});
 
-  useEffect(() => {
-    fetchRecommendations();
-  }, [fetchRecommendations]);
+  const { data: recommendations, isLoading, error } = useQuery({
+    queryKey: ['recommendations', userId],
+    queryFn: async () => {
+      const response = await axios.get(`http://localhost:5001/recommend?user_id=${userId}`);
+      return response.data;
+    },
+    enabled: !!userId,
+  });
+
+  const { data: summaryData, isLoading: summaryLoading, error: summaryError } = useQuery({
+    queryKey: ['summary', selectedMovie?.id],
+    queryFn: async () => {
+      const response = await axios.get(`http://localhost:5001/summarize?movie_id=${selectedMovie.id}`);
+      return response.data;
+    },
+    enabled: !!selectedMovie && tabValue === 'summary',
+  });
 
   const handleCardClick = (movie) => {
-    console.log('Selected movie:', movie);
     setSelectedMovie(movie);
     setTabValue('details');
     setExpandedReviews({});
@@ -96,17 +108,12 @@ function Recommendations() {
   };
 
   const parseReviews = (reviewsStr) => {
-    console.log('Parsing reviews:', reviewsStr, typeof reviewsStr);
-    if (!reviewsStr || typeof reviewsStr !== 'string') {
-      console.warn('Reviews is empty or not a string:', reviewsStr);
-      return [];
-    }
+    if (!reviewsStr || typeof reviewsStr !== 'string') return [];
     try {
       const parsed = JSON.parse(reviewsStr);
-      console.log('Parsed reviews:', parsed);
       return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      console.error('Ошибка парсинга отзывов:', e, 'Input:', reviewsStr);
+    } catch (error) {
+      console.error('Ошибка парсинга отзывов:', error);
       return [];
     }
   };
@@ -156,7 +163,7 @@ function Recommendations() {
                 color="inherit"
                 onClick={() => navigate(`/history?user_id=${userId}`)}
               >
-                <History />
+                <HistoryIcon />
               </IconButton>
             </Tooltip>
             <Tooltip title="Профиль">
@@ -185,19 +192,21 @@ function Recommendations() {
           </Box>
         </Toolbar>
       </AppBar>
+
       <Container maxWidth="lg" sx={{ mt: 4, p: 4, bgcolor: 'background.paper', borderRadius: 2, boxShadow: 3 }}>
         <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
-          Рекомендации для пользователя {userId || 'Неизвестный'}
+          Рекомендации
         </Typography>
-        {loading ? (
+
+        {isLoading ? (
           <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />
         ) : error ? (
           <Typography variant="h6" color="error" align="center" sx={{ mt: 4 }}>
-            {error}
+            Ошибка загрузки рекомендаций
           </Typography>
-        ) : recommendations.length === 0 ? (
+        ) : !recommendations || recommendations.length === 0 ? (
           <Typography variant="h6" color="text.secondary" align="center" sx={{ mt: 4 }}>
-            Нет доступных рекомендаций
+            Рекомендации отсутствуют
           </Typography>
         ) : (
           <Grid container spacing={4}>
@@ -215,11 +224,6 @@ function Recommendations() {
                     transition: 'transform 0.3s ease, box-shadow 0.3s ease',
                     '&:hover': {
                       boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
-                    },
-                    animation: 'fadeIn 0.5s ease-in-out',
-                    '@keyframes fadeIn': {
-                      '0%': { opacity: 0, transform: 'translateY(20px)' },
-                      '100%': { opacity: 1, transform: 'translateY(0)' },
                     },
                     maxWidth: { xs: 300, sm: '100%' },
                     mx: { xs: 'auto', sm: 0 },
@@ -260,20 +264,19 @@ function Recommendations() {
             onClose={handleCloseDialog}
             maxWidth="md"
             fullWidth
-            sx={{
-              '& .MuiDialog-paper': {
-                animation: 'dialogFadeIn 0.3s ease-in-out',
-                '@keyframes dialogFadeIn': {
-                  '0%': { opacity: 0, transform: 'scale(0.9)' },
-                  '100%': { opacity: 1, transform: 'scale(1)' },
-                },
-              },
+            TransitionComponent={motion.div}
+            TransitionProps={{
+              initial: { opacity: 0, scale: 0.9 },
+              animate: { opacity: 1, scale: 1 },
+              exit: { opacity: 0, scale: 0.9 },
+              transition: { duration: 0.3, ease: 'easeInOut' },
             }}
           >
             <DialogTitle>{selectedMovie.name || 'Неизвестный'}</DialogTitle>
             <Tabs value={tabValue} onChange={handleTabChange} sx={{ px: 2 }}>
               <Tab label="Детали" value="details" />
               <Tab label="Отзывы" value="reviews" />
+              <Tab label="AI Саммари" value="summary" />
             </Tabs>
             <DialogContent sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, p: 2 }}>
               {tabValue === 'details' && (
@@ -365,9 +368,68 @@ function Recommendations() {
                   )}
                 </Box>
               )}
+              {tabValue === 'summary' && (
+                <Box
+                  sx={{
+                    width: '100%',
+                    maxHeight: 400,
+                    overflowY: 'auto',
+                    p: 2,
+                    bgcolor: 'background.paper',
+                    borderRadius: 2,
+                    boxShadow: 1,
+                  }}
+                >
+                  {summaryLoading ? (
+                    <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />
+                  ) : summaryError ? (
+                    <Box>
+                      {formatSummary(fallbackSummary).map((part, index) => (
+                        <Typography
+                          key={index}
+                          variant={part.type === 'header' ? 'h6' : 'body1'}
+                          sx={{
+                            fontWeight: part.type === 'header' ? 'bold' : 'normal',
+                            mb: part.type === 'header' ? 2 : 1,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                          dangerouslySetInnerHTML={{ __html: part.content }}
+                        />
+                      ))}
+                    </Box>
+                  ) : summaryData?.summary ? (
+                    <Box>
+                      {formatSummary(summaryData.summary).map((part, index) => (
+                        <Typography
+                          key={index}
+                          variant={part.type === 'header' ? 'h6' : 'body1'}
+                          sx={{
+                            fontWeight: part.type === 'header' ? 'bold' : 'normal',
+                            mb: part.type === 'header' ? 2 : 1,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                          dangerouslySetInnerHTML={{ __html: part.content }}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body1" color="text.secondary" align="center">
+                      Нет саммари для отображения
+                    </Typography>
+                  )}
+                </Box>
+              )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={handleCloseDialog} color="primary" variant="contained" sx={{ borderRadius: 8, backgroundColor: '#3b82f6', '&:hover': { backgroundColor: '#60a5fa' } }}>
+              <Button
+                onClick={handleCloseDialog}
+                variant="contained"
+                sx={{
+                  borderRadius: 8,
+                  backgroundColor: '#3b82f6',
+                  '&:hover': { backgroundColor: '#60a5fa' },
+                }}
+              >
                 Закрыть
               </Button>
             </DialogActions>

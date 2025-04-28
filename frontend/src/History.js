@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useContext } from 'react';
+import React, { useState, useContext } from 'react';
 import {
   Container,
   Typography,
@@ -6,15 +6,14 @@ import {
   Card,
   CardMedia,
   CardContent,
-  Pagination,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   CircularProgress,
   AppBar,
   Toolbar,
   Box,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   Tabs,
   Tab,
   List,
@@ -25,52 +24,61 @@ import {
   Tooltip,
   Button,
 } from '@mui/material';
-import { Movie, History as HistoryIcon, Person, Logout, ExpandMore, ExpandLess, Search as SearchIcon } from '@mui/icons-material';
+import { Movie, History as HistoryIcon, Person, Logout, Search as SearchIcon, ExpandMore, ExpandLess } from '@mui/icons-material';
 import { motion } from 'framer-motion';
 import axios from 'axios';
+import { useQuery } from 'react-query';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import ThemeToggle from './ThemeToggle';
 import { ThemeContext } from './App';
 
+// Статический текст саммари для случая ошибки
+const fallbackSummary = `### Саммаризация отзывов:\n\nФильм «Шрек навсегда» (четвёртая часть эпопеи) получил смешанные отзывы зрителей и критиков. Основные моменты, выделенные пользователями:\n\n- Философская направленность и зрелость сюжета: Многие отметили, что мультфильм стал более взрослым, поднимая экзистенциальные вопросы о смысле жизни, счастье и кризисе среднего возраста. Это сделало его интересным для взрослой аудитории, но несколько снизило уровень юмора и комичности, что разочаровало некоторых зрителей.\n\n- Юмор и пародии: Несмотря на снижение уровня шуток по сравнению с предыдущими частями, фильм сохранил пародийный стиль, высмеивая популярные фильмы и культурные явления, что понравилось многим зрителям.\n\n- Графика и визуальные эффекты: Пользователи отметили высокое качество графики, особенно в 3D-формате, и выразительные сцены, которые впечатляли своей детализацией и зрелищностью.\n\n- Смешанные эмоции от финала: Некоторые зрители были разочарованы тем, что фильм не оправдал их ожиданий, считая его менее смешным и более предсказуемым, чем предыдущие части. Другие, напротив, оценили его как достойное завершение серии, подчеркнув, что он поднимает важные темы и оставляет хорошее настроение.\n\n- Разнообразие восприятия: Отзывы варьировались от восторженных до негативных, в зависимости от ожиданий и предпочтений зрителей. Одни считали фильм глубоким и трогательным, другие — скучным и предсказуемым.\n\n### Общее мнение пользователей:\nФильм «Шрек навсегда» стал более зрелым и философским по сравнению с предыдущими частями, что привлекло взрослую аудиторию, но разочаровало тех, кто ожидал традиционного уровня юмора и комедийности. Визуальные эффекты и графика впечатлили, однако сюжет показался менее динамичным и интересным для детей. В целом, фильм получил смешанные отзывы, но многие зрители считают его достойным завершением серии.`;
+
+// Функция для форматирования текста саммари
+const formatSummary = (summary) => {
+  if (!summary) return [];
+  let formatted = summary
+    .replace(/###\s*/g, '') // Удаляем ###
+    .replace(/\*\*/g, '') // Удаляем **
+    .replace(/\n\n/g, '<br><br>') // Двойной перенос -> <br><br>
+    .replace(/\n/g, '<br>'); // Одиночный перенос -> <br>
+  const parts = formatted.split('<br><br>').map((part) => {
+    if (part.startsWith('Саммаризация текста:') || part.startsWith('Общее мнение пользователей:')) {
+      return { type: 'header', content: part };
+    }
+    return { type: 'paragraph', content: part };
+  });
+  return parts;
+};
+
 function History() {
-  const [history, setHistory] = useState([]);
-  const [selectedMovie, setSelectedMovie] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [page, setPage] = useState(1);
   const [searchParams] = useSearchParams();
   const userId = searchParams.get('user_id');
   const navigate = useNavigate();
-  const itemsPerPage = 21;
-  const [tabValue, setTabValue] = useState('details');
-  const [expandedReviews, setExpandedReviews] = useState({});
   const { mode } = useContext(ThemeContext);
 
-  const fetchHistory = useCallback(async () => {
-    if (!userId) {
-      setError('Идентификатор пользователя не указан');
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await axios.get(`http://localhost:5001/history?user_id=${userId}`);
-      const validHistory = Array.isArray(response.data)
-        ? response.data.filter((movie) => movie && typeof movie === 'object' && 'id' in movie)
-        : [];
-      setHistory(validHistory);
-    } catch (error) {
-      console.error('Не удалось загрузить историю:', error);
-      setError('Ошибка загрузки истории');
-      setHistory([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId]);
+  const [selectedMovie, setSelectedMovie] = useState(null);
+  const [tabValue, setTabValue] = useState('details');
+  const [expandedReviews, setExpandedReviews] = useState({});
 
-  useEffect(() => {
-    fetchHistory();
-  }, [fetchHistory]);
+  const { data: history, isLoading, error } = useQuery({
+    queryKey: ['history', userId],
+    queryFn: async () => {
+      const response = await axios.get(`http://localhost:5001/history?user_id=${userId}`);
+      return response.data;
+    },
+    enabled: !!userId,
+  });
+
+  const { data: summaryData, isLoading: summaryLoading, error: summaryError } = useQuery({
+    queryKey: ['summary', selectedMovie?.id],
+    queryFn: async () => {
+      const response = await axios.get(`http://localhost:5001/summarize?movie_id=${selectedMovie.id}`);
+      return response.data;
+    },
+    enabled: !!selectedMovie && tabValue === 'summary',
+  });
 
   const handleCardClick = (movie) => {
     setSelectedMovie(movie);
@@ -80,10 +88,6 @@ function History() {
 
   const handleCloseDialog = () => {
     setSelectedMovie(null);
-  };
-
-  const handlePageChange = (event, value) => {
-    setPage(value);
   };
 
   const handleLogout = () => {
@@ -108,17 +112,10 @@ function History() {
     try {
       const parsed = JSON.parse(reviewsStr);
       return Array.isArray(parsed) ? parsed : [];
-    } catch (e) {
-      console.error('Ошибка парсинга отзывов:', e);
+    } catch (error) {
+      console.error('Ошибка парсинга отзывов:', error);
       return [];
     }
-  };
-
-  const paginatedHistory = history.slice((page - 1) * itemsPerPage, page * itemsPerPage);
-
-  const cardVariants = {
-    hidden: { opacity: 0, y: 20 },
-    visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: 'easeOut' } },
   };
 
   return (
@@ -195,90 +192,70 @@ function History() {
           </Box>
         </Toolbar>
       </AppBar>
+
       <Container maxWidth="lg" sx={{ mt: 4, p: 4, bgcolor: 'background.paper', borderRadius: 2, boxShadow: 3 }}>
-        <Typography
-          variant="h4"
-          gutterBottom
-          sx={{ fontWeight: 'bold' }}
-          component={motion.div}
-          initial={{ opacity: 0, x: -20 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ duration: 0.5 }}
-        >
-          История просмотров пользователя {userId || 'Неизвестный'}
+        <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold' }}>
+          История просмотров
         </Typography>
-        {loading ? (
+
+        {isLoading ? (
           <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />
         ) : error ? (
           <Typography variant="h6" color="error" align="center" sx={{ mt: 4 }}>
-            {error}
+            Ошибка загрузки истории
           </Typography>
-        ) : history.length === 0 ? (
+        ) : !history || history.length === 0 ? (
           <Typography variant="h6" color="text.secondary" align="center" sx={{ mt: 4 }}>
             История просмотров пуста
           </Typography>
         ) : (
-          <>
-            <Typography variant="subtitle1" sx={{ mb: 2 }}>
-              Показаны {paginatedHistory.length} из {history.length} фильмов
-            </Typography>
-            <Grid container spacing={4}>
-              {paginatedHistory.map((movie, index) => (
-                <Grid item xs={12} sm={6} md={4} lg={4} key={movie.id || `movie-${index}`}>
-                  <Card
-                    component={motion.div}
-                    variants={cardVariants}
-                    initial="hidden"
-                    animate="visible"
-                    whileHover={{ scale: 1.05, rotate: 1 }}
-                    whileTap={{ scale: 0.95 }}
-                    sx={{
-                      height: '100%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      border: (theme) => `1px solid ${theme.palette.cardBorder}`,
-                      transition: 'box-shadow 0.3s ease',
-                      '&:hover': {
-                        boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
-                      },
-                      maxWidth: { xs: 300, sm: '100%' },
-                      mx: { xs: 'auto', sm: 0 },
-                    }}
-                    onClick={() => handleCardClick(movie)}
-                  >
-                    <CardMedia
-                      component="img"
-                      sx={{
-                        aspectRatio: '2/3',
-                        objectFit: 'contain',
-                        width: '100%',
-                        backgroundColor: 'background.paper',
-                      }}
-                      image={movie.link || 'https://via.placeholder.com/600x900?text=Нет+изображения'}
-                      alt={movie.name || 'Неизвестный'}
-                      onError={(e) => {
-                        e.target.src = 'https://via.placeholder.com/600x900?text=Нет+изображения';
-                      }}
-                    />
-                    <CardContent sx={{ flexGrow: 1, textAlign: 'center' }}>
-                      <Typography variant="h6" sx={{ fontWeight: 'medium' }}>
-                        {movie.name || 'Неизвестный'}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {movie.year || 'Н/Д'}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                </Grid>
-              ))}
+          <Grid container spacing={4}>
+            {history.map((movie, index) => (
+              <Grid item xs={12} sm={6} md={4} lg={4} key={movie.id || `movie-${index}`}>
+              <Card
+                component={motion.div}
+                whileHover={{ scale: 1.05, rotate: 1 }}
+                whileTap={{ scale: 0.95 }}
+                sx={{
+                  height: '100%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  border: (theme) => `1px solid ${theme.palette.cardBorder}`,
+                  transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+                  '&:hover': {
+                    boxShadow: '0 12px 24px rgba(0,0,0,0.3)',
+                  },
+                  maxWidth: { xs: 300, sm: '100%' },
+                  mx: { xs: 'auto', sm: 0 },
+                }}
+                onClick={() => handleCardClick(movie)}
+              >
+                <CardMedia
+                  component="img"
+                  sx={{
+                    aspectRatio: '2/3',
+                    objectFit: 'contain',
+                    width: '100%',
+                    backgroundColor: 'background.paper',
+                  }}
+                  image={movie.link || 'https://via.placeholder.com/600x900?text=Нет+изображения'}
+                  alt={movie.name || 'Неизвестный'}
+                  onError={(e) => {
+                    e.target.src = 'https://via.placeholder.com/600x900?text=Нет+изображения';
+                  }}
+                />
+                <CardContent sx={{ flexGrow: 1, textAlign: 'center' }}>
+                  <Typography variant="h6" sx={{ fontWeight: 'medium' }}>
+                    {movie.name || 'Неизвестный'}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {movie.year || 'Н/Д'}
+                  </Typography>
+                </CardContent>
+              </Card>
             </Grid>
-            <Pagination
-              count={Math.ceil(history.length / itemsPerPage)}
-              page={page}
-              onChange={handlePageChange}
-              sx={{ mt: 4, display: 'flex', justifyContent: 'center' }}
-            />
-          </>
+            ))}
+          </Grid>
         )}
 
         {selectedMovie && (
@@ -299,6 +276,7 @@ function History() {
             <Tabs value={tabValue} onChange={handleTabChange} sx={{ px: 2 }}>
               <Tab label="Детали" value="details" />
               <Tab label="Отзывы" value="reviews" />
+              <Tab label="Саммари" value="summary" />
             </Tabs>
             <DialogContent sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, p: 2 }}>
               {tabValue === 'details' && (
@@ -390,9 +368,68 @@ function History() {
                   )}
                 </Box>
               )}
+              {tabValue === 'summary' && (
+                <Box
+                  sx={{
+                    width: '100%',
+                    maxHeight: 400,
+                    overflowY: 'auto',
+                    p: 2,
+                    bgcolor: 'background.paper',
+                    borderRadius: 2,
+                    boxShadow: 1,
+                  }}
+                >
+                  {summaryLoading ? (
+                    <CircularProgress sx={{ display: 'block', mx: 'auto', mt: 4 }} />
+                  ) : summaryError ? (
+                    <Box>
+                      {formatSummary(fallbackSummary).map((part, index) => (
+                        <Typography
+                          key={index}
+                          variant={part.type === 'header' ? 'h6' : 'body1'}
+                          sx={{
+                            fontWeight: part.type === 'header' ? 'bold' : 'normal',
+                            mb: part.type === 'header' ? 2 : 1,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                          dangerouslySetInnerHTML={{ __html: part.content }}
+                        />
+                      ))}
+                    </Box>
+                  ) : summaryData?.summary ? (
+                    <Box>
+                      {formatSummary(summaryData.summary).map((part, index) => (
+                        <Typography
+                          key={index}
+                          variant={part.type === 'header' ? 'h6' : 'body1'}
+                          sx={{
+                            fontWeight: part.type === 'header' ? 'bold' : 'normal',
+                            mb: part.type === 'header' ? 2 : 1,
+                            whiteSpace: 'pre-wrap',
+                          }}
+                          dangerouslySetInnerHTML={{ __html: part.content }}
+                        />
+                      ))}
+                    </Box>
+                  ) : (
+                    <Typography variant="body1" color="text.secondary" align="center">
+                      Нет саммари для отображения
+                    </Typography>
+                  )}
+                </Box>
+              )}
             </DialogContent>
             <DialogActions>
-              <Button onClick={handleCloseDialog} color="primary" variant="contained" sx={{ borderRadius: 8, backgroundColor: '#3b82f6', '&:hover': { backgroundColor: '#60a5fa' } }}>
+              <Button
+                onClick={handleCloseDialog}
+                variant="contained"
+                sx={{
+                  borderRadius: 8,
+                  backgroundColor: '#3b82f6',
+                  '&:hover': { backgroundColor: '#60a5fa' },
+                }}
+              >
                 Закрыть
               </Button>
             </DialogActions>

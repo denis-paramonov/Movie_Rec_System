@@ -6,6 +6,8 @@ import logging
 from flask_cors import CORS
 import pandas as pd
 import json
+import uuid
+import os
 
 app = Flask(__name__)
 CORS(app, origins=["http://localhost:3000"])
@@ -22,6 +24,7 @@ DB_CONFIG = {
 }
 
 RECOMMENDER_URL = "http://recommender:5000/recommend"
+GIGACHAT_AUTH_TOKEN = os.getenv('GIGACHAT_AUTH_TOKEN', '')  # Переменная окружения для токена
 
 def check_credentials(username, password):
     conn = psycopg2.connect(**DB_CONFIG)
@@ -56,6 +59,50 @@ def get_next_user_id():
     next_id = cursor.fetchone()[0]
     conn.close()
     return next_id
+
+def get_gigachat_token(auth_token, scope='GIGACHAT_API_PERS'):
+    rq_uid = str(uuid.uuid4())
+    url = "https://ngw.devices.sberbank.ru:9443/api/v2/oauth"
+    headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'RqUID': rq_uid,
+        'Authorization': f'Basic {auth_token}'
+    }
+    payload = {'scope': scope}
+    try:
+        response = requests.post(url, headers=headers, data=payload, verify=False)
+        response.raise_for_status()
+        return response.json()['access_token']
+    except requests.RequestException as e:
+        logger.error(f"Failed to get GigaChat token: {str(e)}")
+        return None
+
+def get_chat_completion(auth_token, user_message):
+    url = "https://gigachat.devices.sberbank.ru/api/v1/chat/completions"
+    payload = json.dumps({
+        "model": "GigaChat-2-Pro",
+        "messages": [{"role": "user", "content": user_message}],
+        "temperature": 1,
+        "top_p": 0.1,
+        "n": 1,
+        "stream": False,
+        "max_tokens": 512,
+        "repetition_penalty": 1,
+        "update_interval": 0
+    })
+    headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': f'Bearer {auth_token}'
+    }
+    try:
+        response = requests.post(url, headers=headers, data=payload, verify=False)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException as e:
+        logger.error(f"Failed to get chat completion: {str(e)}")
+        return None
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -212,7 +259,6 @@ def get_movies():
         countries_df = pd.read_csv('/app/data/countries.csv', encoding='utf-8')
         staff_df = pd.read_csv('/app/data/staff.csv', encoding='utf-8')
         
-        # Подготовка данных фильмов
         movies['id'] = movies['id'].fillna(-1).astype(int)
         movies['name'] = movies['name'].fillna('Unknown').str.strip()
         movies['description'] = movies['description'].fillna('')
@@ -258,7 +304,6 @@ def get_movies():
         movies['country'] = movies['countries'].apply(lambda x: [countries_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
         movies['actors'] = movies['staff'].apply(lambda x: [staff_map.get(id, str(id)) for id in x] if isinstance(x, list) else [])
         
-        # Фильтрация
         filtered_movies = movies
         logger.info(f"Search query: {search_query}")
         if search_query:
@@ -270,7 +315,6 @@ def get_movies():
         if genre:
             filtered_movies = filtered_movies[filtered_movies['genres'].apply(lambda x: genre in [g.lower() for g in x] if isinstance(x, list) else False)]
         
-        # Пагинация
         total = len(filtered_movies)
         start = (page - 1) * per_page
         end = start + per_page
@@ -417,6 +461,73 @@ def get_analytics():
     except Exception as e:
         logger.error(f"Failed to get analytics: {str(e)}")
         return jsonify({"error": "Failed to get analytics"}), 500
+
+import ast  # Добавляем импорт для ast.literal_eval
+
+@app.route('/summarize', methods=['GET'])
+def summarize_reviews():
+    movie_id = request.args.get('movie_id', type=int)
+    if not movie_id:
+        return jsonify({"error": "movie_id is required"}), 400
+    logger.info(f"Requesting summary for movie {movie_id}")
+
+    try:
+        movies = pd.read_csv('/app/data/movies.csv', encoding='utf-8')
+        movie = movies[movies['id'] == movie_id]
+        if movie.empty:
+            return jsonify({"error": "Movie not found"}), 404
+
+        reviews_str = movie['reviews'].iloc[0]
+        logger.info(f'Текущий отзыв - {reviews_str[:10000]}, {type(reviews_str)}')
+
+        reviews = []
+        if isinstance(reviews_str, str) and reviews_str.strip():
+            try:
+                # Пытаемся разобрать как JSON
+                reviews = json.loads(reviews_str)
+            except json.JSONDecodeError as json_error:
+                logger.error(f"Invalid JSON in reviews for movie {movie_id}: {reviews_str}, error: {str(json_error)}")
+                try:
+                    # Пробуем разобрать как Python-литерал с помощью ast.literal_eval
+                    reviews = ast.literal_eval(reviews_str)
+                    logger.info(f"Successfully parsed reviews with ast.literal_eval for movie {movie_id}")
+                except (ValueError, SyntaxError) as ast_error:
+                    logger.error(f"Failed to parse reviews with ast.literal_eval for movie {movie_id}: {reviews_str}, error: {str(ast_error)}")
+                    reviews = []
+
+        # Проверяем, что reviews - это список
+        if not isinstance(reviews, list):
+            logger.warning(f"Reviews is not a list for movie {movie_id}: {reviews}")
+            reviews = []
+
+        # Извлекаем текст отзывов, проверяя структуру
+        review_texts = []
+        for review in reviews:
+            if isinstance(review, dict) and 'text' in review:
+                review_texts.append(str(review['text']))  # Приводим к строке для безопасности
+            else:
+                logger.warning(f"Invalid review format in movie {movie_id}: {review}")
+
+        reviews_combined = ' '.join(review_texts)
+
+        if not reviews_combined:
+            return jsonify({"summary": "Нет отзывов для саммаризации"}), 200
+
+        giga_token = get_gigachat_token(GIGACHAT_AUTH_TOKEN)
+        if not giga_token:
+            return jsonify({"error": "Failed to authenticate with GigaChat"}), 500
+
+        user_message = f'Сделай саммаризацию для следующего текста: {reviews_combined}. Сформируй общее мнение пользователей'
+        response = get_chat_completion(giga_token, user_message)
+        if not response:
+            return jsonify({"error": "Failed to get summary from GigaChat"}), 500
+
+        summary = response['choices'][0]['message']['content']
+        return jsonify({"summary": summary}), 200
+    except Exception as e:
+        logger.error(f"Failed to summarize reviews: {str(e)}")
+        return jsonify({"error": "Failed to summarize reviews"}), 500
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001)
