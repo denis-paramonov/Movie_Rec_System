@@ -408,7 +408,8 @@ def get_analytics():
         countries_df = pd.read_csv('/app/data/countries.csv', encoding='utf-8')
         staff_df = pd.read_csv('/app/data/staff.csv', encoding='utf-8')
         
-        user_logs = logs[logs['user_id'] == user_id]
+        # Получаем уникальные фильмы для пользователя
+        user_logs = logs[logs['user_id'] == user_id][['movie_id']].drop_duplicates()
         if user_logs.empty:
             return jsonify({
                 "genres": [],
@@ -417,15 +418,31 @@ def get_analytics():
                 "top_actors": []
             }), 200
         
+        # Соединяем с данными фильмов
         user_movies = user_logs.merge(movies, left_on='movie_id', right_on='id', how='inner')
+        
+        # Обработка жанров
         user_movies['genres'] = user_movies['genres'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
         genre_counts = {}
         for genres in user_movies['genres']:
             for genre_id in genres:
                 genre_name = genres_df[genres_df['id'] == genre_id]['name'].iloc[0] if genre_id in genres_df['id'].values else str(genre_id)
                 genre_counts[genre_name] = genre_counts.get(genre_name, 0) + 1
-        genres_data = [{"name": k, "value": v} for k, v in genre_counts.items()]
         
+        # Вычисляем общее количество жанров для расчёта процентов
+        total_genre_count = sum(genre_counts.values())
+        genres_data = []
+        other_count = 0
+        for genre, count in genre_counts.items():
+            percentage = (count / total_genre_count) * 100 if total_genre_count > 0 else 0
+            if percentage < 5:
+                other_count += count
+            else:
+                genres_data.append({"name": genre, "value": count})
+        if other_count > 0:
+            genres_data.append({"name": "Остальное", "value": other_count})
+        
+        # Обработка стран
         user_movies['countries'] = user_movies['countries'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
         country_counts = {}
         for countries in user_movies['countries']:
@@ -434,20 +451,24 @@ def get_analytics():
                 country_counts[country_name] = country_counts.get(country_name, 0) + 1
         countries_data = [{"name": k, "value": v} for k, v in country_counts.items()]
         
-        user_logs['datetime'] = pd.to_datetime(user_logs['datetime'])
-        user_logs['weekday'] = user_logs['datetime'].dt.day_name()
-        weekday_views = user_logs.groupby('weekday')['duration'].sum().reset_index()
+        # Обработка просмотров по дням недели
+        user_logs_full = logs[logs['user_id'] == user_id]
+        user_logs_full['datetime'] = pd.to_datetime(user_logs_full['datetime'])
+        user_logs_full['weekday'] = user_logs_full['datetime'].dt.day_name()
+        weekday_views = user_logs_full.groupby('weekday')['duration'].sum().reset_index()
         days_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
         weekday_views['weekday'] = pd.Categorical(weekday_views['weekday'], categories=days_order, ordered=True)
         weekday_views = weekday_views.sort_values('weekday')
         weekday_views_data = weekday_views.to_dict('records')
         
+        # Обработка актёров
         user_movies['staff'] = user_movies['staff'].apply(lambda x: json.loads(x) if isinstance(x, str) and x.strip() else [])
         staff_counts = {}
         for staff in user_movies['staff']:
             for staff_id in staff:
                 staff_role = staff_df[staff_df['id'] == staff_id]['role'].iloc[0] if staff_id in staff_df['id'].values else 'unknown'
                 if staff_role == 'actor':
+
                     staff_name = staff_df[staff_df['id'] == staff_id]['name'].iloc[0] if staff_id in staff_df['id'].values else str(staff_id)
                     staff_counts[staff_name] = staff_counts.get(staff_name, 0) + 1
         filtered_staff_counts = {k: v for k, v in staff_counts.items() if v >= min_movies}
